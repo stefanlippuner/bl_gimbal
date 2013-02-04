@@ -2,37 +2,24 @@
 //#define DEBUG
 
 /**********************************************/
-/* Configure Control Algorithm                */
+/* Config PID Constants                       */
+/* DMP is used for I and D                    */
+/* Raw Gyro is used for P Part                */
 /**********************************************/
-// Use DMP or raw Gyro only
-#define USE_RAW_GYRO
-//#define USE_DMP
+#define GYRO_PITCH_Kp 0.7
+#define DMP_PITCH_Ki 0.05    
+#define DMP_PITCH_Kd 0.1
+
+#define GYRO_ROLL_Kp 0.7
+#define DMP_ROLL_Ki 0.05
+#define DMP_ROLL_Kd 0.1
+
 
 /**********************************************/
-/* Config PIDs for DMP Usage                  */
+/* Low pass filter for Raw Gyro Signal        */
 /**********************************************/
-// THOSE ARE DUMMY VALUES !!!
-// PID Values for Pitch and Roll
-#define DMP_PITCH_Kp 5.0   
-#define DMP_PITCH_Ki 0.25    
-#define DMP_PITCH_Kd 0.25 
-
-#define DMP_ROLL_Kp 5.0
-#define DMP_ROLL_Ki 0.0
-#define DMP_ROLL_Kd 0.0
-
-/**********************************************/
-/* Config PIDs for GYRO Usage                 */
-/**********************************************/
-// THOSE ARE DUMMY VALUES !!!
-// PID Values for Pitch and Roll
-#define GYRO_PITCH_Kp 0.98  
-#define GYRO_PITCH_Ki 0.0    
-#define GYRO_PITCH_Kd 0.0 
-
-#define GYRO_ROLL_Kp 0.98
-#define GYRO_ROLL_Ki 0.25
-#define GYRO_ROLL_Kd 0.25
+#define LP_FILTER_GYRO // uncomment if not required
+#define LP_ALPHA_GYRO 0.5
 
 /**********************************************/
 /* Configuration Timings and Motors           */
@@ -46,11 +33,11 @@
 
 
 // Define Brushless PWM Mode, uncomment ONE setting
+// ATTENTION: Only works well for 4KHz for now.
+
 //#define PWM_32KHZ_PHASE  // Resolution 8 bit for PWM
 //#define PWM_8KHZ_FAST    // Resolution 8 bit for PWM
 #define PWM_4KHZ_PHASE   // Resolution 8 bit for PWM
-
-// ATTENTION: Only works well for 4KHz for now.
 
 
 // Define Motor "Geometry" 
@@ -60,7 +47,8 @@
 #define N_POLES_MOTOR_ROLL 14
 
 
-// Choose Direction for the Motors , Normal (1) or Reverse (-1)  
+// Choose Direction for the Motors , Normal (1) or Reverse (-1)
+// You can also just swap two cables of the motor-controller connection
 #define DIR_MOTOR_PITCH 1
 #define DIR_MOTOR_ROLL 1
 
@@ -68,41 +56,36 @@
 #define MOTOR_PITCH 0
 #define MOTOR_ROLL 1
 
-// Hardware Abstraction for Motor connectors, 
-// DO NOT CHANGE UNLES YOU KNOW WHAT YOU ARE DOING !!!
-#define PWM_A_MOTOR1 OCR2A
-#define PWM_B_MOTOR1 OCR1B
-#define PWM_C_MOTOR1 OCR1A
+// Uncomment if you want to have Power/Torque Reduction in nearly stabilized conditions
+// and power limitation to prevent overheating
+// If uncommented then the MAX_POWER_MOTOR_X Value is used as a constant
 
-#define PWM_A_MOTOR0 OCR0A
-#define PWM_B_MOTOR0 OCR0B
-#define PWM_C_MOTOR0 OCR2B
+//#define USE_POWER_REDUCTION_MOTOR_PITCH
+//#define USE_POWER_REDUCTION_MOTOR_ROLL
+
+// Devide max PWM-Power per Motor 
+#define MIN_POWER_MOTOR_0 0.2                // 0-1
+#define MAX_POWER_MOTOR_0 0.35                // 0-1
+#define POWER_REDUCTION_SLOPE_MOTOR_0 50.0   // in deg/s
+
+#define MIN_POWER_MOTOR_1 0.5
+#define MAX_POWER_MOTOR_1 1.0
+#define POWER_REDUCTION_SLOPE_MOTOR_1 50.0
 
 
 /**********************************************/
 /* Configuration MPU6050                      */
 /**********************************************/
 
-#define MPU6050_GYRO_FS MPU6050_GYRO_FS_500  // +-250,500,1000,2000 deg/s
-#define MPU6050_DLPF_BW MPU6050_DLPF_BW_188    // 5,10,20,42,98,188,256 Hz
-
 // MPU Address Settings
-#define MPU6050_ADDRESS_AD0_LOW     0x68 // address pin low (GND), default for InvenSense evaluation board
-#define MPU6050_ADDRESS_AD0_HIGH    0x69 // address pin high (VCC)
+#define MPU6050_ADDRESS_AD0_LOW     0x68 // default for InvenSense evaluation board
+#define MPU6050_ADDRESS_AD0_HIGH    0x69 // Drotek MPU breakout board
 #define MPU6050_DEFAULT_ADDRESS     MPU6050_ADDRESS_AD0_HIGH
 
 // DMP initialization time
 // Recommendation: ~10-15 secs
-#define DMP_INIT_TIME 15.0
+#define DMP_INIT_TIME 5.0
 
-// DMP Update frequency
-//#define DMP_100HZ
-#define DMP_200HZ
-
-// I2C Frequency
-//#define I2C_SPEED 100000L     //100kHz normal mode
-//#define I2C_SPEED 400000L   //400kHz fast mode
-#define I2C_SPEED 800000L   //800kHz ultra fast mode
 
 
 

@@ -61,7 +61,7 @@ THE SOFTWARE.
 // Debugging Definitions moved to config.h and definitions.h // CAW
 
 #define MPU6050_DMP_CODE_SIZE       1929    // dmpMemory[]
-#define MPU6050_DMP_CONFIG_SIZE     192     // dmpConfig[]
+#define MPU6050_DMP_CONFIG_SIZE     174 //178 //192     // dmpConfig[]
 #define MPU6050_DMP_UPDATES_SIZE    47      // dmpUpdates[]
 
 /* ================================================================================================ *
@@ -241,14 +241,14 @@ const prog_uchar dmpConfig[MPU6050_DMP_CONFIG_SIZE] PROGMEM = {
     0x04,   0x02,   0x03,   0x0D, 0x35, 0x5D,         // CFG_MOTION_BIAS inv_turn_on_bias_from_no_motion
     0x04,   0x09,   0x04,   0x87, 0x2D, 0x35, 0x3D,   // FCFG_5 inv_set_bias_update
     0x00,   0xA3,   0x01,   0x00,                     // D_0_163 inv_set_dead_zone
-                 // SPECIAL 0x01 = enable interrupts
-    0x00,   0x00,   0x00,   0x01, // SET INT_ENABLE at i=22, SPECIAL INSTRUCTION
+                                                       // SPECIAL 0x01 = enable interrupts
+    0x00,   0x00,   0x00,   0x01,                     // SET INT_ENABLE at i=22, SPECIAL INSTRUCTION
     0x07,   0x86,   0x01,   0xFE,                     // CFG_6 inv_set_fifo_interupt
     0x07,   0x41,   0x05,   0xF1, 0x20, 0x28, 0x30, 0x38, // CFG_8 inv_send_quaternion
     0x07,   0x7E,   0x01,   0x30,                     // CFG_16 inv_set_footer
-    0x07,   0x46,   0x01,   0x9A,                     // CFG_GYRO_SOURCE inv_send_gyro
-    0x07,   0x47,   0x04,   0xF1, 0x28, 0x30, 0x38,   // CFG_9 inv_send_gyro -> inv_construct3_fifo
-    0x07,   0x6C,   0x04,   0xF1, 0x28, 0x30, 0x38,   // CFG_12 inv_send_accel -> inv_construct3_fifo
+//    0x07,   0x46,   0x01,   0x9A,                     // CFG_GYRO_SOURCE inv_send_gyro
+//    0x07,   0x47,   0x04,   0xF1, 0x28, 0x30, 0x38,   // CFG_9 inv_send_gyro -> inv_construct3_fifo
+//    0x07,   0x6C,   0x04,   0xF1, 0x28, 0x30, 0x38,   // CFG_12 inv_send_accel -> inv_construct3_fifo
 #ifdef DMP_100HZ
     0x02,   0x16,   0x02,   0x00, 0x01                // D_0_22 inv_set_fifo_rate
 #else
@@ -350,7 +350,7 @@ uint8_t MPU6050::dmpInitialize() {
             setIntEnabled(0x12);
 
             DEBUG_PRINTLN(F("Setting sample rate to 200Hz..."));
-            setRate(4); // 1khz / (1 + 4) = 200 Hz
+            setRate(4); // 1khz / (1 + X) = X=4 => 200 Hz
 
             DEBUG_PRINTLN(F("Setting external frame sync to TEMP_OUT_L[0]..."));
             setExternalFrameSync(MPU6050_EXT_SYNC_TEMP_OUT_L);
@@ -359,7 +359,6 @@ uint8_t MPU6050::dmpInitialize() {
             setDLPFMode(MPU6050_DLPF_BW_42);
 
             DEBUG_PRINTLN(F("Setting gyro sensitivity to +/- 2000 deg/sec..."));
-            // Slower but Higher Resolution
             setFullScaleGyroRange(MPU6050_GYRO_FS_2000);
 
             DEBUG_PRINTLN(F("Setting DMP configuration bytes (function unknown)..."));
@@ -454,11 +453,15 @@ uint8_t MPU6050::dmpInitialize() {
             for (j = 0; j < 4 || j < dmpUpdate[2] + 3; j++, pos++) dmpUpdate[j] = pgm_read_byte(&dmpUpdates[pos]);
             readMemoryBlock(dmpUpdate + 3, dmpUpdate[2], dmpUpdate[0], dmpUpdate[1]);
 
+            resetFIFO();
+  
             DEBUG_PRINTLN(F("Waiting for FIFO count > 2..."));
             while ((fifoCount = getFIFOCount()) < 3);
 
             DEBUG_PRINT(F("Current FIFO count="));
             DEBUG_PRINTLN(fifoCount);
+            
+            if(fifoCount>128) resetFIFO();
 
             DEBUG_PRINTLN(F("Reading FIFO data..."));
             getFIFOBytes(fifoBuffer, fifoCount);

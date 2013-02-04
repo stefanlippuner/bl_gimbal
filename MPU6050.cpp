@@ -2905,7 +2905,10 @@ void MPU6050::setDMPEnabled(bool enabled) {
     I2Cdev::writeBit(devAddr, MPU6050_RA_USER_CTRL, MPU6050_USERCTRL_DMP_EN_BIT, enabled);
 }
 void MPU6050::resetDMP() {
+//    I2Cdev::writeBit(devAddr, MPU6050_RA_USER_CTRL, MPU6050_USERCTRL_DMP_RESET_BIT, true);
     I2Cdev::writeBit(devAddr, MPU6050_RA_USER_CTRL, MPU6050_USERCTRL_DMP_RESET_BIT, true);
+    I2Cdev::writeBit(devAddr, MPU6050_RA_USER_CTRL, 0x00, true);
+    I2Cdev::writeBit(devAddr, MPU6050_RA_USER_CTRL, 0x80 | 0x40 | 0x08, true);
 }
 
 // BANK_SEL register
