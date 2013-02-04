@@ -1,4 +1,3 @@
-#include "config.h"
 #include "definitions.h"
 
 /*
@@ -133,24 +132,23 @@ void initBlController()
 }
 
 
-void fastMoveMotor(int motorNumber, int dirStep)
+void fastMoveMotor(uint8_t motorNumber, int dirStep,uint8_t* pwmSin)
 {
   if (motorNumber == 0)
   {
     currentStepMotor0 += dirStep;
-    PWM_A_MOTOR0 = (uint8_t)(pwmSin[currentStepMotor0] / MAX_POWER_MOTOR_0);
-    PWM_B_MOTOR0 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor0 + 85)] / MAX_POWER_MOTOR_0);
-    PWM_C_MOTOR0 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor0 + 170)] / MAX_POWER_MOTOR_0);
+    PWM_A_MOTOR0 = pwmSin[currentStepMotor0];
+    PWM_B_MOTOR0 = pwmSin[(uint8_t)(currentStepMotor0 + 85)];
+    PWM_C_MOTOR0 = pwmSin[(uint8_t)(currentStepMotor0 + 170)];
   }
  
   if (motorNumber == 1)
   {
     currentStepMotor1 += dirStep;
-    PWM_A_MOTOR1 = (uint8_t)(pwmSin[currentStepMotor1] / MAX_POWER_MOTOR_1);
-    PWM_B_MOTOR1 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor1 + 85)] / MAX_POWER_MOTOR_1);
-    PWM_C_MOTOR1 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor1 + 170)] / MAX_POWER_MOTOR_1);
+    PWM_A_MOTOR1 = pwmSin[currentStepMotor1] ;
+    PWM_B_MOTOR1 = pwmSin[(uint8_t)(currentStepMotor1 + 85)] ;
+    PWM_C_MOTOR1 = pwmSin[(uint8_t)(currentStepMotor1 + 170)] ;
   }
 }
-
 
 

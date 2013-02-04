@@ -1,6 +1,28 @@
 /*************************/
 /* Definitions           */
 /*************************/
+// MPU Address Settings
+#define MPU6050_ADDRESS_AD0_LOW     0x68 // default for InvenSense evaluation board
+#define MPU6050_ADDRESS_AD0_HIGH    0x69 // Drotek MPU breakout board
+#define MPU6050_DEFAULT_ADDRESS     MPU6050_ADDRESS_AD0_HIGH
+
+
+
+
+
+
+// Define Brushless PWM Mode, uncomment ONE setting
+#define PWM_32KHZ_PHASE  // Resolution 8 bit for PWM
+//#define PWM_8KHZ_FAST    // Resolution 8 bit for PWM
+//#define PWM_4KHZ_PHASE   // Resolution 8 bit for PWM
+//#define NO_PWM_LOOP
+
+#define MOTORUPDATE_FREQ 8 //in kHz 1,2,4,8 for 32kHz, 1,2,4 for 4kHz
+
+// Do not change for now
+#define MPU6050_GYRO_FS MPU6050_GYRO_FS_250  // +-250,500,1000,2000 deg/s
+#define MPU6050_DLPF_BW MPU6050_DLPF_BW_256 //0x07   //MPU6050_DLPF_BW_256 //256    // 5,10,20,42,98,188,256 Hz
+
 
 // Number of sinus values for full 360 deg.
 // NOW FIXED TO 256 !!!
@@ -20,7 +42,7 @@
 
 
 
-// Hardware Abstraction for Motor connectors, 
+// Hardware Abstraction for Motor connectors,
 // DO NOT CHANGE UNLES YOU KNOW WHAT YOU ARE DOING !!!
 #define PWM_A_MOTOR1 OCR2A
 #define PWM_B_MOTOR1 OCR1B
@@ -45,17 +67,17 @@
 
 
 #ifdef PWM_32KHZ_PHASE
-  #define CC_FACTOR 32  
-#endif  
+  #define CC_FACTOR 32
+#endif
 #ifdef PWM_4KHZ_PHASE
-  #define CC_FACTOR 4  
+  #define CC_FACTOR 4
 #endif
 #ifdef PWM_8KHZ_FAST
-  #define CC_FACTOR 8 
+  #define CC_FACTOR 8
 #endif
 #ifdef NO_PWM_LOOP
   #define CC_FACTOR 1
-#endif 
+#endif
 
 
 #define LEDPIN_PINMODE             pinMode (8, OUTPUT);
