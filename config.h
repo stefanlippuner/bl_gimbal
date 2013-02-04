@@ -2,17 +2,37 @@
 //#define DEBUG
 
 /**********************************************/
-/* Config PIDs                                */
+/* Configure Control Algorithm                */
+/**********************************************/
+// Use DMP or raw Gyro only
+#define USE_RAW_GYRO
+//#define USE_DMP
+
+/**********************************************/
+/* Config PIDs for DMP Usage                  */
 /**********************************************/
 // THOSE ARE DUMMY VALUES !!!
 // PID Values for Pitch and Roll
-#define CONST_PITCH_Kp 5.0   
-#define CONST_PITCH_Ki 0.25    
-#define CONST_PITCH_Kd 0.25 
+#define DMP_PITCH_Kp 5.0   
+#define DMP_PITCH_Ki 0.25    
+#define DMP_PITCH_Kd 0.25 
 
-#define CONST_ROLL_Kp 5.0
-#define CONST_ROLL_Ki 0.25
-#define CONST_ROLL_Kd 0.25
+#define DMP_ROLL_Kp 5.0
+#define DMP_ROLL_Ki 0.0
+#define DMP_ROLL_Kd 0.0
+
+/**********************************************/
+/* Config PIDs for GYRO Usage                 */
+/**********************************************/
+// THOSE ARE DUMMY VALUES !!!
+// PID Values for Pitch and Roll
+#define GYRO_PITCH_Kp 0.98  
+#define GYRO_PITCH_Ki 0.0    
+#define GYRO_PITCH_Kd 0.0 
+
+#define GYRO_ROLL_Kp 0.98
+#define GYRO_ROLL_Ki 0.25
+#define GYRO_ROLL_Kd 0.25
 
 /**********************************************/
 /* Configuration Timings and Motors           */
@@ -33,10 +53,6 @@
 // ATTENTION: Only works well for 4KHz for now.
 
 
-// Number of sinus values for full 360 deg, should be devideable by 3
-// 510 is max due to memory limitations
-#define N_SIN 150
-
 // Define Motor "Geometry" 
 // -> 2 Poles = 1 revolution for one 2 PI Sinus
 // -> 14 Poles = 1/7 revolution for one 2 PI Sinus
@@ -54,18 +70,22 @@
 
 // Hardware Abstraction for Motor connectors, 
 // DO NOT CHANGE UNLES YOU KNOW WHAT YOU ARE DOING !!!
-#define PWM_A_MOTOR2 OCR2A
-#define PWM_B_MOTOR2 OCR1B
-#define PWM_C_MOTOR2 OCR1A
+#define PWM_A_MOTOR1 OCR2A
+#define PWM_B_MOTOR1 OCR1B
+#define PWM_C_MOTOR1 OCR1A
 
-#define PWM_A_MOTOR1 OCR0A
-#define PWM_B_MOTOR1 OCR0B
-#define PWM_C_MOTOR1 OCR2B
+#define PWM_A_MOTOR0 OCR0A
+#define PWM_B_MOTOR0 OCR0B
+#define PWM_C_MOTOR0 OCR2B
 
 
 /**********************************************/
 /* Configuration MPU6050                      */
 /**********************************************/
+
+#define MPU6050_GYRO_FS MPU6050_GYRO_FS_500  // +-250,500,1000,2000 deg/s
+#define MPU6050_DLPF_BW MPU6050_DLPF_BW_188    // 5,10,20,42,98,188,256 Hz
+
 // MPU Address Settings
 #define MPU6050_ADDRESS_AD0_LOW     0x68 // address pin low (GND), default for InvenSense evaluation board
 #define MPU6050_ADDRESS_AD0_HIGH    0x69 // address pin high (VCC)
@@ -83,4 +103,6 @@
 //#define I2C_SPEED 100000L     //100kHz normal mode
 //#define I2C_SPEED 400000L   //400kHz fast mode
 #define I2C_SPEED 800000L   //800kHz ultra fast mode
+
+
 

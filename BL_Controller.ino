@@ -1,3 +1,5 @@
+#include "config.h"
+#include "definitions.h"
 
 /*
 https://sites.google.com/site/qeewiki/books/avr-guide/timers-on-the-atmega328
@@ -118,10 +120,10 @@ void initBlController()
   TCCR2B = _BV(CS21);
 #endif
 
-  // Enable Timer1 Interrupt for Motor Control
   TIMSK1 |= _BV(TOIE1);
   sei();
-  
+
+  // Enable Timer1 Interrupt for Motor Control
   OCR2A = 0;  //11  APIN
   OCR2B = 0;  //D3
   OCR1A = 0;  //D9  CPIN
@@ -135,7 +137,10 @@ void moveMotor(int motorNumber, int dirStep)
 {
   int phaseA,phaseB,phaseC;
 
-  phaseA = N_SIN + currentStep[motorNumber] + dirStep;
+  
+  if (motorNumber == 0)
+  {
+  phaseA = N_SIN + currentStepMotor0 + dirStep;
   phaseB = phaseA + (N_SIN / 3);  
   phaseC = phaseB + (N_SIN / 3);  
     
@@ -143,25 +148,83 @@ void moveMotor(int motorNumber, int dirStep)
   phaseB = phaseB % N_SIN;
   phaseC = phaseC % N_SIN;
 
-  currentStep[motorNumber] = phaseA;
-  
-  if (motorNumber == 0)
-  {
-    PWM_A_MOTOR1 = pwmSin[phaseA];
-    PWM_B_MOTOR1 = pwmSin[phaseB];
-    PWM_C_MOTOR1 = pwmSin[phaseC];
+  currentStepMotor0 = phaseA;
+
+    PWM_A_MOTOR0 = pwmSin[phaseA];
+    PWM_B_MOTOR0 = pwmSin[phaseB];
+    PWM_C_MOTOR0 = pwmSin[phaseC];
+    Serial.print(phaseA);
+    Serial.print(" ");
+    Serial.print(phaseB);
+    Serial.print(" ");
+    Serial.print(phaseC);
+    Serial.print(" ");
+    Serial.print(pwmSin[phaseA]);
+    Serial.print(" ");
+    Serial.print(pwmSin[phaseB]);
+    Serial.print(" ");
+    Serial.println(pwmSin[phaseC]);
+    
+   
+    
   }
  
   if (motorNumber == 1)
   {
-    PWM_A_MOTOR2 = pwmSin[phaseA];
-    PWM_B_MOTOR2 = pwmSin[phaseB];
-    PWM_C_MOTOR2 = pwmSin[phaseC];
+  phaseA = N_SIN + currentStepMotor1 + dirStep;
+  phaseB = phaseA + (N_SIN / 3);  
+  phaseC = phaseB + (N_SIN / 3);  
+    
+  phaseA = phaseA % N_SIN;
+  phaseB = phaseB % N_SIN;
+  phaseC = phaseC % N_SIN;
+
+  currentStepMotor1 = phaseA;
+
+    PWM_A_MOTOR1 = pwmSin[phaseA];
+    PWM_B_MOTOR1 = pwmSin[phaseB];
+    PWM_C_MOTOR1 = pwmSin[phaseC];
   }
 }
 
 
+
+void fastMoveMotor(int motorNumber, int dirStep)
+{
+  if (motorNumber == 0)
+  {
+    currentStepMotor0 += dirStep;
+    PWM_A_MOTOR0 = pwmSin[currentStepMotor0];
+    PWM_B_MOTOR0 = pwmSin[(uint8_t)(currentStepMotor0 + 85)];
+    PWM_C_MOTOR0 = pwmSin[(uint8_t)(currentStepMotor0 + 170)];
+  }
+ 
+  if (motorNumber == 1)
+  {
+    currentStepMotor1 += dirStep;
+    PWM_A_MOTOR1 = pwmSin[currentStepMotor1];
+    PWM_B_MOTOR1 = pwmSin[(uint8_t)(currentStepMotor1 + 85)];
+    PWM_C_MOTOR1 = pwmSin[(uint8_t)(currentStepMotor1 + 170)];
+  }
+}
+
+
+
 /*
+    
+    Serial.print(currentStepMotor0);
+    Serial.print(" ");
+    Serial.print((uint8_t)(currentStepMotor0+85));
+    Serial.print(" ");
+    Serial.print((uint8_t)(currentStepMotor0+170));
+    Serial.print(" ");
+    Serial.print(PWM_A_MOTOR0);
+    Serial.print(" ");
+    Serial.print(PWM_B_MOTOR0);
+    Serial.print(" ");
+    Serial.println(PWM_C_MOTOR0);    
+
+
     Serial.print(phaseA);
     Serial.print(" ");
     Serial.print(phaseB);
@@ -174,8 +237,6 @@ void moveMotor(int motorNumber, int dirStep)
     Serial.print(" ");
     Serial.println(pwmSin[phaseC]);
 */
-
-//TCNT1 = 130;           //Reset Timer to 130 out of 255
 
 
 

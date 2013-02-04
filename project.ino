@@ -16,64 +16,64 @@ Thanks To :
 -rgsteele
 */
 
-byte VersionStatus = 'B'; // B = Beta , N = Normal Release
-byte VersionNumber = 035; 
+/* Change History
+036 A:
+- Choose between DMP and Raw Gyro Stabilisation
+  (Raw Gyro is only a tech demo implementation for now: P controller only, no setpoint)
+- Faster Motor routine using uint8_t overflow for counter. Sinus Array length therefore is fixed now to 256.
+- Raw Gyro can be filtered with low pass (change alpha below)
+- YOU HAVE TO CHANGE wiring.c, see below !!!!
+- DOES IT WORK? Well....no fo now.
+*/
+
+
+
+
+
+
+/* 
+ATTENTION:
+Change Arduino wiring.c, ~Line 27, to:
+
+// the prescaler is set so that timer0 ticks every 64 clock cycles, and the
+// the overflow handler is called every 256 ticks.
+#ifndef MICROSECONDS_PER_TIMER0_OVERFLOW
+#define MICROSECONDS_PER_TIMER0_OVERFLOW (clockCyclesToMicroseconds(64 * 256))
+#endif
+*/
+
+#define VERSION_STATUS A // A = Alpha; B = Beta , N = Normal Release
+#define VERSION 036
+
 
 /*************************/
 /* Include Header Files  */
 /*************************/
-#include <avr/interrupt.h>
-#include <Wire.h>
 
 #include "config.h"
 #include "definitions.h"
+
+#include <avr/interrupt.h>
+#include <Wire.h>
+
 #include "MPU6050_6Axis_DMP.h"
 
+/*************************/
+/* Variables             */
+/*************************/
 
-/************************/
-/* BL Controller        */
-/************************/
+// BL Controller Variables
 uint8_t pwmSin[N_SIN];
 float maxDegPerSecondPitch,maxDegPerSecondRoll;
-
-// Current status of Magnetic Field for Motors
-int currentStep[2]={0,0};
+uint8_t currentStepMotor0 = 0;
+uint8_t currentStepMotor1 = 0;
 int pitchDevider,rollDevider;
 int pitchDirection,rollDirection;
-
-// Fast Interrupt driven loop for Motor control */
-int deviderCountPitch = 0;
+int deviderCountPitch = 0;      // Fast Interrupt driven loop for Motor control 
 int deviderCountRoll = 0;
+uint8_t freqCounter=0;
 
-int8_t sgn(int val) {
-  if (val < 0) return -1;
-  if (val==0) return 0;
-  return 1;
-}
-
-unsigned long testcounter = 0;
-ISR( TIMER1_OVF_vect )
-{
-  // Move pitch and roll Motor
-  // 8-16 micros overall :-)
-  deviderCountPitch++;
-  if(deviderCountPitch  >= abs(pitchDevider))
-  {
-    moveMotor(MOTOR_PITCH, pitchDirection); 
-    deviderCountPitch=0;
-  }
-    
-  deviderCountRoll++;
-  if(deviderCountRoll >= abs(rollDevider))
-  {
-    moveMotor(MOTOR_ROLL, rollDirection ); 
-    deviderCountRoll=0;
-  }
-}
-
-/*************************/
-/* MPU 6050 DMP          */
-/*************************/
+// Variables for MPU6050
 bool dmpReady = false;  // set true if DMP init was successful
 uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
 uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
@@ -81,9 +81,45 @@ uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
 uint8_t fifoBuffer[16]; // FIFO storage buffer
 Quaternion q;           // [w, x, y, z]         quaternion container
 volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
+float gyroPitch, gyroRoll; //in deg/s
+float pitchGyroOffset,rollGyroOffset,resolutionDevider;
+float gyroPitchOld,gyroRollOld;
+MPU6050 mpu;// Create MPU object
 
-// Create MPU object
-MPU6050 mpu;
+
+//Define Variables for PIDs
+float sampleTimePID;
+float error;
+float pitchSetpoint = 0;
+float pitchInput = 0;
+float pitchOutput = 0;
+float pitchErrorSum = 0;
+float pitchErrorOld = 0;
+float rollSetpoint = 0;
+float rollInput = 0;
+float rollOutput = 0;
+float rollErrorSum = 0;
+float rollErrorOld = 0;
+
+//general purpuse timer
+unsigned long timer=0;   
+unsigned long timer_old;
+
+
+
+
+
+
+
+
+int8_t sgn(int val) {
+  if (val < 0) return -1;
+  if (val==0) return 0;
+  return 1;
+}
+/*************************/
+/* MPU6050 Routines      */
+/*************************/
 
 // Interrupt Handler
 void dmpDataReady() 
@@ -103,31 +139,44 @@ void updatePositionFromDmpFast(float *pitch, float *roll)
     
     *pitch = asin(-2*(q.x * q.z - q.w * q.y)) * 180/M_PI; // DMP yaw takes ~120 micros   // pitch for my sensor setup
     *roll = atan2(2*(q.y * q.z + q.w * q.x), q.w * q.w - q.x * q.x - q.y * q.y + q.z * q.z)* 180/M_PI; // DMP pitch takes ~310 micros // roll for my sensor setup
-//    *roll = sgn(*roll) * (180.0 - sgn(*roll) * *roll);
     *roll = sgn(*roll) * 180.0 - *roll;
-    
     //atan2(2*(q.x * q.y + q.w * q.z), q.w * q.w + q.x * q.x - q.y * q.y - q.z * q.z) * 180/M_PI ; // DMP roll takes ~310 micros
 }
 
 
-/************************/
-/* PID Controllers      */
-/************************/
-//Define Variables for PIDs
-float sampleTimePID;
-float error;
+// Read Raw gyro data and filter it with exponentially weighed moving average (EWMA)
+/* FS_SEL | Full Scale Range   | LSB Sensitivity
+ * -------+--------------------+----------------
+ * 0      | +/- 250 degrees/s  | 131 LSB/deg/s
+ * 1      | +/- 500 degrees/s  | 65.5 LSB/deg/s
+ * 2      | +/- 1000 degrees/s | 32.8 LSB/deg/s
+ * 3      | +/- 2000 degrees/s | 16.4 LSB/deg/s
+ */
 
-float pitchSetpoint = 0;
-float pitchInput = 0;
-float pitchOutput = 0;
-float pitchErrorSum = 0;
-float pitchErrorOld = 0;
+void initResolutionDevider()
+{
+    if(MPU6050_GYRO_FS == 0x00) resolutionDevider = 131.0;
+    if(MPU6050_GYRO_FS == 0x01) resolutionDevider = 65.5;
+    if(MPU6050_GYRO_FS == 0x02) resolutionDevider = 32.8;
+    if(MPU6050_GYRO_FS == 0x03) resolutionDevider = 16.4;
+}
 
-float rollSetpoint = 0;
-float rollInput = 0;
-float rollOutput = 0;
-float rollErrorSum = 0;
-float rollErrorOld = 0;
+float alpha = 0.25;
+void updateRawGyroData()
+{
+  gyroPitch = (mpu.getRotationY()- pitchGyroOffset)/resolutionDevider;
+  gyroPitch = alpha * gyroPitch + (1.0-alpha) * gyroPitchOld;
+  gyroPitchOld=gyroPitch;
+ 
+  gyroRoll = (mpu.getRotationX() - rollGyroOffset)/resolutionDevider;
+  gyroRoll = alpha * gyroRoll + (1.0-alpha) * gyroRollOld;
+  gyroRollOld=gyroRoll;
+}
+
+
+/************************/
+/* PID Controller       */
+/************************/
 
 // Simplified PID code
 float ComputePID(float SampleTimeInSecs, float in, float setPoint, float *errorSum, float *errorOld, float Kp, float Ki, float Kd, float maxDegPerSecond)
@@ -146,15 +195,30 @@ float ComputePID(float SampleTimeInSecs, float in, float setPoint, float *errorS
 }
 
 
-/************************/
-/* Common Variables     */
-/************************/
-//general purpuse timer
-unsigned long timer=0;   
-unsigned long timer_old;
+/********************************/
+/* Motor Control Routines       */
+/********************************/
+ISR( TIMER1_OVF_vect )
+{
+  #ifdef USE_RAW_GYRO
+    freqCounter++;
+  #endif
 
-
-
+  // Move pitch and roll Motor
+  deviderCountPitch++;
+  if(deviderCountPitch  >= abs(pitchDevider))
+  {
+    fastMoveMotor(MOTOR_PITCH, pitchDirection); 
+    deviderCountPitch=0;
+  }
+    
+  deviderCountRoll++;
+  if(deviderCountRoll >= abs(rollDevider))
+  {
+    fastMoveMotor(MOTOR_ROLL, rollDirection ); 
+    deviderCountRoll=0;
+  }
+}
 
 /**********************************************/
 /* Initialization                             */
@@ -162,8 +226,7 @@ unsigned long timer_old;
 void setup() 
 {
   LEDPIN_PINMODE
-  
-
+    
   // Start Serial Port
   Serial.begin(115200);
   Serial.println("BLGC Starting Initialization ...");
@@ -196,80 +259,132 @@ void setup()
  
 
   mpu.initialize();
-  Serial.println("Init MPU done ...");
-  
-  devStatus = mpu.dmpInitialize();
-  Serial.println("Init DMP done ...");
- 
-  if (devStatus == 0) 
-  {
-    mpu.setDMPEnabled(true);
-    mpuIntStatus = mpu.getIntStatus();
-    dmpReady = true;
-    packetSize = mpu.dmpGetFIFOPacketSize();
-    attachInterrupt(0, dmpDataReady, RISING);
-    Serial.println("Init MPU6050 competely done ... :-)");
-  } 
-  else
-  {/* ERROR */}
-
   delay(500);
-
-  // Read a couple of values from DMP to ensure "good" values
-  // Otherwise you might end up with NAN in PID calculations
-  // Also the DMP needs a couple of seconds to calibrate itself
-  timer=millis();
-  delay((DMP_INIT_TIME-1)*1000);
-  while((millis()-timer)/1000 <= DMP_INIT_TIME)
-  {
-    if (mpuInterrupt == true)
-    {
-      updatePositionFromDmpFast(&pitchInput,&rollInput);
-      mpuInterrupt = false;    
-    }
-  }
+  Serial.println("Init MPU done ...");
+  if(mpu.testConnection()) Serial.println("MPU6050 connection successful");
   
-  // Init BL Controller
-  initBlController();
-  Serial.println("Init BL Control done ...");
-
-  // Initialize timer
-  timer=micros();
   LEDPIN_ON
+  
+  #ifdef USE_DMP
+    devStatus = mpu.dmpInitialize();
+    Serial.println("Init DMP done ...");
+ 
+    if (devStatus == 0) 
+    {
+      mpu.setDMPEnabled(true);
+      mpuIntStatus = mpu.getIntStatus();
+      dmpReady = true;
+      packetSize = mpu.dmpGetFIFOPacketSize();
+      attachInterrupt(0, dmpDataReady, RISING);
+      Serial.println("Init MPU6050 competely done ... :-)");
+    }   
+
+    // Read a couple of values from DMP to ensure "good" values
+    // Otherwise you might end up with NAN in PID calculations
+    // Also the DMP needs a couple of seconds to calibrate itself
+    timer=millis();
+    delay((DMP_INIT_TIME-1)*1000);
+    while((millis()-timer)/1000 <= DMP_INIT_TIME)
+    {
+      if (mpuInterrupt == true)
+      {
+        updatePositionFromDmpFast(&pitchInput,&rollInput);
+        mpuInterrupt = false;    
+      }
+    }
+  #endif
+  
+  #ifdef USE_RAW_GYRO
+    mpu.setFullScaleGyroRange(MPU6050_GYRO_FS);
+    mpu.setDLPFMode(MPU6050_DLPF_BW);
+    
+    initResolutionDevider();
+    Serial.print("Gyro resolution devider in LSB/deg/s = ");
+    Serial.println(resolutionDevider);
+    
+    pitchGyroOffset = 0;
+    rollGyroOffset = 0;
+    for(int i = 0; i < 200; i++)
+    {
+      rollGyroOffset += mpu.getRotationX();
+      pitchGyroOffset += mpu.getRotationY();
+      delay(5);
+    }
+    rollGyroOffset = rollGyroOffset / 200;
+    pitchGyroOffset = pitchGyroOffset / 200;
+    Serial.print("Gyro Offset Roll: ");
+    Serial.println(rollGyroOffset);
+    Serial.print("Gyro Offset Pitch: ");
+    Serial.println(pitchGyroOffset);
+  #endif
+
+   // Init BL Controller
+  delay(500);
+  initBlController();
+  delay(500);
+  Serial.println("Init BL Control done ...");
+  
+ // Initialize timer
+  timer=micros();
+
+  Serial.println("GoGoGo...");
 }
 
 /**********************************************/
 /* Main Loop                                  */
 /**********************************************/
 
+#ifdef USE_DMP
 void loop() 
 {
-  if (!dmpReady) return; // Only Start the Programm if MPU are Ready ! 
+  //if (!dmpReady) return; // Only Start the Programm if MPU are Ready ! 
 
+  dmpReady=true;
+  
   if (mpuInterrupt == true)
   {
-    sampleTimePID = (micros()-timer)/CC_FACTOR/1000000.0; // in Seconds!
+    sampleTimePID = (micros()-timer)/1000000.0; // in Seconds!
     timer = micros();
 
     updatePositionFromDmpFast(&pitchInput,&rollInput);
     
-    pitchOutput = ComputePID(sampleTimePID,pitchInput,pitchSetpoint, &pitchErrorSum, &pitchErrorOld,CONST_PITCH_Kp,CONST_PITCH_Ki,CONST_PITCH_Kd,maxDegPerSecondPitch);
+    pitchOutput = ComputePID(sampleTimePID,pitchInput,pitchSetpoint, &pitchErrorSum, &pitchErrorOld,DMP_PITCH_Kp,DMP_PITCH_Ki,DMP_PITCH_Kd,maxDegPerSecondPitch);
     pitchDevider = constrain(maxDegPerSecondPitch / (pitchOutput + 0.000001), -15000,15000);
     pitchDirection = sgn(pitchDevider) * DIR_MOTOR_PITCH;
 
-    rollOutput = ComputePID(sampleTimePID,rollInput,rollSetpoint, &rollErrorSum, &rollErrorOld,CONST_ROLL_Kp,CONST_ROLL_Ki,CONST_ROLL_Kd,maxDegPerSecondRoll);
+    rollOutput = ComputePID(sampleTimePID,rollInput,rollSetpoint, &rollErrorSum, &rollErrorOld,DMP_ROLL_Kp,DMP_ROLL_Ki,DMP_ROLL_Kd,maxDegPerSecondRoll);
     rollDevider = constrain(maxDegPerSecondRoll / (rollOutput + 0.000001), -15000,15000);
     rollDirection = sgn(rollDevider) * DIR_MOTOR_ROLL;
 
-    Serial.print(" "); Serial.print(pitchInput);
-//    Serial.print(" "); Serial.print(pitchDevider);
-   
-   Serial.print(" "); Serial.print(rollInput);
-//   Serial.print(" "); Serial.print(rollDevider);
-
-    Serial.println();
-    
     mpuInterrupt = false;    
-  }
-  
+  }  
 }
+#endif
+
+#ifdef USE_RAW_GYRO
+void loop()
+{
+  if(freqCounter % CC_FACTOR == 0) // runs at ~1kHz
+  {
+    updateRawGyroData();
+
+    // P-Part Pitch
+    pitchDevider = constrain(maxDegPerSecondPitch / (gyroPitch * GYRO_PITCH_Kp + 0.000001), -15000,15000);
+    pitchDirection = sgn(pitchDevider) * DIR_MOTOR_PITCH;
+
+    // P-Part Roll
+    rollDevider = constrain(maxDegPerSecondRoll / (gyroRoll * GYRO_ROLL_Kp + 0.000001), -15000,15000);
+    rollDirection = sgn(rollDevider) * DIR_MOTOR_ROLL;
+      
+    Serial.println(gyroPitch);
+  }
+  if(freqCounter > CC_FACTOR * 4 == 0) // runs at ~250Hz
+  {
+    freqCounter=0;
+  }
+    
+
+}
+#endif
+
+

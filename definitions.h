@@ -13,22 +13,24 @@
     #define DEBUG_PRINTLNF(x, y)
 #endif
 
-
+// Number of sinus values for full 360 deg.
+// NOW FIXED TO 256 !!!
+// Reason: Fast Motor Routine using uint8_t overflow for stepping
+#define N_SIN 256
 
 #ifdef PWM_32KHZ_PHASE
-  #define CC_FACTOR 31,25 // Correction Factor for delay(), millis() and micros() 
+  #define CC_FACTOR 32  
+  #define MICROSECONDS_PER_TIMER0_OVERFLOW (clockCyclesToMicroseconds(1 * 256)) // Correction Factor for delay(), millis() and micros(), works with modified wiring.c
   #define maxPWM 255 // max value for PWM  
 #endif
-#ifdef PWM_16KHZ_PHASE
-  #define CC_FACTOR 15.625 // Correction Factor for delay(), millis() and micros() 
-  #define maxPWM 63 // max value for PWM
-#endif 
 #ifdef PWM_4KHZ_PHASE
-  #define CC_FACTOR 3.90625 // Correction Factor for delay(), millis() and micros() 
+  #define CC_FACTOR 4  
+  #define MICROSECONDS_PER_TIMER0_OVERFLOW (clockCyclesToMicroseconds(16 * 256)) // Correction Factor for delay(), millis() and micros(), works with modified wiring.c
   #define maxPWM 255 // max value for PWM
 #endif 
 #ifdef PWM_8KHZ_FAST
-  #define CC_FACTOR 7.8125 // Correction Factor for delay(), millis() and micros()
+  #define CC_FACTOR 8 
+  #define MICROSECONDS_PER_TIMER0_OVERFLOW (clockCyclesToMicroseconds(8 * 256)) // Correction Factor for delay(), millis() and micros(), works with modified wiring.c
   #define maxPWM 255 // max value for PWM
 #endif 
 
