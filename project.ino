@@ -20,10 +20,22 @@ Thanks To :
 
 
 /* Change History
+039 A: MAJOR REWORK!!!
+- Removed usage of DMP completely
+- Relay on raw Gyro and raw ACC only! 
+Gyro is used at ~1kHz to counter movements, ACC vs set point
+is mixed into gyro signal to ensure horizontal camera (IMU) position
+- global max PWM duty cycle and Power devider per motor can be configured in config.h 
+Hint: lower torque = lower power allows for higher P on Pitch for me.
+- code cleanup, removed obsolete stuff.
+- 32kHz PWM works now for motor movement updates for up to 8 kHz. 
+( No more beeping :-), i dont care for energy loss at the moment )
+
+038 A: Test version, not published
 037 A:
 - NEW: Motor Power Management. Two Options: 
   -- Fixed max Torque/Power (caveat: 
-  -- Lower Torque/Power for slower Movements -> EXPERIMENTAL
+  -- Lower Torque/Power for slower Movements -> EXPERIMENTAL (removed in 039)
 - NEW: Use DMP output for I and D Part in control loop at 100Hz (or 200Hz), use raw Gyro at 500Hz for P-Part 
   -- Caveat: setting the sample rate to 500Hz for gyro screws up the dmp algorithm for now. 
      Some more research required ro configure the mpu correctly.
@@ -45,7 +57,7 @@ Thanks To :
 
 
 #define VERSION_STATUS A // A = Alpha; B = Beta , N = Normal Release
-#define VERSION 037
+#define VERSION 039
 
 
 /*************************/
@@ -69,55 +81,48 @@ uint8_t pwmSin[N_SIN];
 float maxDegPerSecondPitch,maxDegPerSecondRoll;
 uint8_t currentStepMotor0 = 0;
 uint8_t currentStepMotor1 = 0;
+
 int pitchDevider = 15000;
 int rollDevider = 15000;
-int pitchDeviderTemp = 15000;
-int rollDeviderTemp = 15000;
-int pitchDeviderTempOld = 15000;
-int rollDeviderTempOld = 15000;
+
 int8_t pitchDirection = 1;
 int8_t rollDirection = 1;
+
 int deviderCountPitch = 0;      
 int deviderCountRoll = 0;
+
 int freqCounter=0;
 
 
 
 // Variables for MPU6050
-bool dmpReady = false;  // set true if DMP init was successful
-uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
-uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
-uint8_t fifoBuffer[18]; // FIFO storage buffer
-Quaternion q;           // [w, x, y, z]         quaternion container
-volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
 float gyroPitch, gyroRoll; //in deg/s
-float pitchGyroOffset,rollGyroOffset,resolutionDevider;
+float xGyroOffset,yGyroOffset,resolutionDevider;
 float gyroPitchOld,gyroRollOld;
 MPU6050 mpu;// Create MPU object
 
 
 //Define Variables for PIDs
 float sampleTimePID = 0.01;
+float sampleTimeACC = 0.1;
 
 float pitchSetpoint = 0;
 float pitchAngle = 0;
-float pitchP = 0;
-float pitchID = 0;
+float pitchAngleACC = 0;
 float pitchPID = 0;
 float pitchErrorSum = 0;
 float pitchErrorOld = 0;
 
 float rollSetpoint = 0;
 float rollAngle = 0;
-float rollP = 0;
-float rollID = 0;
+float rollAngleACC = 0;
 float rollPID = 0;
 float rollErrorSum = 0;
 float rollErrorOld = 0;
 
 //general purpuse timer
 unsigned long timer=0;   
-unsigned long timer_old;
+unsigned long timerACC=0;
 
 
 
@@ -137,28 +142,6 @@ int8_t sgn(int val) {
 /* MPU6050 Routines      */
 /*************************/
 
-// Interrupt Handler
-void dmpDataReady() 
-{
-  mpuInterrupt = true;
-}
-
-// Calculation of pitch and roll, optimized for speed!!! 
-// No Error handling in DMP anymore, only first 16bytes of DMP FIFI are read, these are the quarternions
-// then FIFO is reset to prevent wrong subsequent readings, but this costs about 260 micros
-// Select correct two calculations for angles
-void updatePositionFromDmpFast(float *pitch, float *roll) 
-{
-    mpu.getFIFOBytes(fifoBuffer, 18); // I2C 800000L : 1300-1308 micros fo 42 bytes, ~540 micros for 16bytes
-    mpu.dmpGetQuaternion(&q, fifoBuffer); // I2C 800000L : 64-68 micros
-//    mpu.resetFIFO(); // Has to be done in case, where less than 42 bytes a read from FIFO // I2C 800000L : 260 micros
-    
-    *pitch = asin(-2*(q.x * q.z - q.w * q.y)) * 180/M_PI; // DMP yaw takes ~120 micros   // pitch for my sensor setup
-    *roll = atan2(2*(q.y * q.z + q.w * q.x), q.w * q.w - q.x * q.x - q.y * q.y + q.z * q.z)* 180/M_PI; // DMP pitch takes ~310 micros // roll for my sensor setup
-    *roll = sgn(*roll) * 180.0 - *roll;
-    //atan2(2*(q.x * q.y + q.w * q.z), q.w * q.w + q.x * q.x - q.y * q.y - q.z * q.z) * 180/M_PI ; // DMP roll takes ~310 micros
-}
-
 // Read Raw gyro data
 /* FS_SEL | Full Scale Range   | LSB Sensitivity
  * -------+--------------------+----------------
@@ -176,11 +159,57 @@ void initResolutionDevider()
     if(MPU6050_GYRO_FS == 0x03) resolutionDevider = 16.4;
 }
 
-void updateRawGyroData()
+void updateRawGyroData(float* gyroX, float* gyroY)
 {
-  gyroPitch = (mpu.getRotationY()- pitchGyroOffset)/resolutionDevider;
-  gyroRoll = (mpu.getRotationX() - rollGyroOffset)/resolutionDevider;
+  int16_t x,y;
+  mpu.getRotationXY(&x,&y);
+  
+  *gyroX = (x-xGyroOffset)/resolutionDevider;//(mpu.getRotationY()- pitchGyroOffset)/resolutionDevider;
+  *gyroY = (y-yGyroOffset)/resolutionDevider;//(mpu.getRotationX() - rollGyroOffset)/resolutionDevider;
 }
+
+
+// This functions performs an initial gyro offset calibration
+// Board should be still for some seconds 
+void gyroOffsetCalibration()
+{
+  xGyroOffset=0; yGyroOffset=0; 
+  for(int i=0;i<500;i++)
+  {
+    xGyroOffset += mpu.getRotationX();
+    yGyroOffset += mpu.getRotationY();
+    delay(10);
+  }
+  
+  xGyroOffset=xGyroOffset/500.0;
+  yGyroOffset=yGyroOffset/500.0;
+  
+  Serial.print("X Ygro Offset = "); Serial.println(xGyroOffset);
+  Serial.print("Y Ygro Offset = "); Serial.println(yGyroOffset);
+}
+
+
+
+/*
+ * AFS_SEL | Full Scale Range | LSB Sensitivity
+ * --------+------------------+----------------
+ * 0       | +/- 2g           | 8192 LSB/mg
+ * 1       | +/- 4g           | 4096 LSB/mg
+ * 2       | +/- 8g           | 2048 LSB/mg
+ * 3       | +/- 16g          | 1024 LSB/mg
+*/
+
+void updateAccelAngleData(float* angleX, float* angleY)
+{
+  int16_t x_val, y_val, z_val;
+  mpu.getAcceleration(&x_val,&y_val,&z_val);
+  
+*angleX =atan2(-y_val,-z_val)*57.2957795;
+*angleY =-atan2(-x_val,-z_val)*57.2957795;
+
+}  
+
+
 
 
 /************************/
@@ -203,20 +232,6 @@ float ComputePID(float SampleTimeInSecs, float in, float setPoint, float *errorS
   return constrain(out, -maxDegPerSecond ,maxDegPerSecond);
 }
 
-// Simplified I + D only code
-float ComputeID(float SampleTimeInSecs, float in, float setPoint, float *errorSum, float *errorOld, float Ki, float Kd)
-{
-  float error = setPoint - in;
-
-  // Integrate Errors
-  *errorSum += error;
-
-  /*Compute I + D Output*/
-  float out = SampleTimeInSecs * Ki * *errorSum + Kd * (error - *errorOld) / (SampleTimeInSecs + 0.000001);
-  *errorOld = error;
-
-  return out; 
-}
 
 
 
@@ -226,28 +241,24 @@ float ComputeID(float SampleTimeInSecs, float in, float setPoint, float *errorSu
 ISR( TIMER1_OVF_vect )
 {
   freqCounter++;
+  if(freqCounter==(CC_FACTOR/MOTORUPDATE_FREQ))
+  {
 
-  // Move pitch and roll Motor
-  deviderCountPitch++;
-  if(deviderCountPitch  >= abs(pitchDevider))
-  {
-    #ifdef USE_POWER_REDUCTION_MOTOR_PITCH
-      fastMoveMotorVariablePower(MOTOR_PITCH, pitchDirection,pitchPIDOutput); 
-    #else
+    // Move pitch and roll Motor
+    deviderCountPitch++;
+    if(deviderCountPitch  >= abs(pitchDevider))
+    {
       fastMoveMotor(MOTOR_PITCH, pitchDirection); 
-    #endif  
-    deviderCountPitch=0;
-  }
+      deviderCountPitch=0;
+    }
     
-  deviderCountRoll++;
-  if(deviderCountRoll >= abs(rollDevider))
-  {
-    #ifdef USE_POWER_REDUCTION_MOTOR_ROLL
-      fastMoveMotorVariablePower(MOTOR_ROLL, rollDirection,rollPIDOutput); 
-    #else
+    deviderCountRoll++;
+    if(deviderCountRoll >= abs(rollDevider))
+    {
       fastMoveMotor(MOTOR_ROLL, rollDirection); 
-    #endif  
-    deviderCountRoll=0;
+      deviderCountRoll=0;
+    }
+    freqCounter=0;
   }
 }
 
@@ -272,9 +283,8 @@ void setup()
   Serial.println();
   
   // Initialize Motor Movement
-  maxDegPerSecondPitch = CC_FACTOR * 1000 / N_SIN / (N_POLES_MOTOR_PITCH/2) * 360.0;
-  maxDegPerSecondRoll = CC_FACTOR * 1000 / N_SIN / (N_POLES_MOTOR_ROLL/2) * 360.0;
-  delay(500);
+  maxDegPerSecondPitch = MOTORUPDATE_FREQ * 1000 / N_SIN / (N_POLES_MOTOR_PITCH/2) * 360.0;
+  maxDegPerSecondRoll = MOTORUPDATE_FREQ * 1000 / N_SIN / (N_POLES_MOTOR_ROLL/2) * 360.0;
   
   // Start I2C and Configure Frequency
   Wire.begin();
@@ -282,70 +292,45 @@ void setup()
   TWBR = ((16000000L / I2C_SPEED) - 16) / 2; // change the I2C clock rate
   TWCR = 1<<TWEN;                            // enable twi module, no interrupt
  
-
-  mpu.initialize();
-  delay(500);
+  // Initialize MPU 
+  mpu.setClockSource(MPU6050_CLOCK_PLL_ZGYRO);          // Set Clock to ZGyro
+  mpu.setFullScaleGyroRange(MPU6050_GYRO_FS);           // Set Gyro Sensitivity to config.h
+  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);       //+- 2G
+  mpu.setDLPFMode(MPU6050_DLPF_BW);                     // Set Gyro Low Pass Filter to config.h
+  mpu.setRate(0);                                       // 0=1kHz, 1=500Hz, 2=333Hz, 3=250Hz, 4=200Hz
+  mpu.setSleepEnabled(false); 
+  
+  gyroOffsetCalibration();
+  
   Serial.println("Init MPU done ...");
-  if(mpu.testConnection()) Serial.println("MPU6050 connection successful");
+  if(mpu.testConnection()) 
+    Serial.println("MPU6050 connection successful");
   
   LEDPIN_ON
   
-  devStatus = mpu.dmpInitialize();
-  Serial.println("Init DMP done ...");
-
-
-  mpu.setDLPFMode(MPU6050_DLPF_BW);
-  mpu.setFullScaleGyroRange(MPU6050_GYRO_FS);
-  mpu.setRate(4); // 0=1kHz, 1=500Hz, 2=333Hz, 3=250Hz, 4=200Hz
-  
-  mpu.resetDMP();
-
-  if (devStatus == 0) 
-  {
-    mpu.setDMPEnabled(true);
-    mpuIntStatus = mpu.getIntStatus();
-    dmpReady = true;
-    attachInterrupt(0, dmpDataReady, RISING);
-    Serial.println("Init MPU6050 competely done ... :-)");
-  }   
-
   initResolutionDevider();
   Serial.print("Gyro resolution devider in LSB/deg/s = ");
   Serial.println(resolutionDevider);
-   
-  pitchGyroOffset = 0;
-  rollGyroOffset = 0;
-  for(int i = 0; i < 200; i++)
-  {
-    rollGyroOffset += mpu.getRotationX();
-    pitchGyroOffset += mpu.getRotationY();
-    delay(5);
-  }
-  rollGyroOffset = rollGyroOffset / 200;
-  pitchGyroOffset = pitchGyroOffset / 200;
-  Serial.print("Gyro Offset Roll: ");
-  Serial.println(rollGyroOffset);
-  Serial.print("Gyro Offset Pitch: ");
-  Serial.println(pitchGyroOffset);
 
    // Init BL Controller
-  delay(500);
   initBlController();
-  delay(500);
+  delay(10 * CC_FACTOR);
+  
+  // Move Motors to ensure function
   for(int i=0; i<255; i++)
   {
     fastMoveMotor(MOTOR_ROLL, 1); 
     fastMoveMotor(MOTOR_PITCH, 1);
-    delay(500);
+    delay(15 * CC_FACTOR);
   }
   for(int i=0; i<255; i++)
   {
     fastMoveMotor(MOTOR_ROLL, -1); 
     fastMoveMotor(MOTOR_PITCH, -1);
-    delay(500);
+    delay(15 * CC_FACTOR);
   }
   
-  delay(2000);
+  delay(40 * CC_FACTOR);
     
   Serial.println("Init BL Control done ...");
   
@@ -353,107 +338,51 @@ void setup()
   timer=micros();
 
   Serial.println("GoGoGo...");
-
-  // Required to prevent NAN error from MPU
-
-  mpu.resetDMP();
-  mpu.resetFIFO(); 
 }
 
 /**********************************************/
 /* Main Loop                                  */
 /**********************************************/
-long int count=0;
+int count=0;
 void loop() 
 {
-  if (mpuInterrupt == true)
+  count++;
+
+  sampleTimePID = (micros()-timer)/1000000.0/CC_FACTOR; // in Seconds!
+  timer = micros();
+   
+  // Update raw Gyro
+  updateRawGyroData(&gyroRoll,&gyroPitch);
+    
+  // Update ACC data approximately at 50Hz to save calculation time.
+  if(count > 20)
   {
-    sampleTimePID = max((micros()-timer)/1000000.0/CC_FACTOR,0.00001); // in Seconds!
-    timer = micros();
-
-    // Get Orientation
-    updatePositionFromDmpFast(&pitchAngle,&rollAngle);
-
-    // Calculate I and D Part only !!!
-    pitchID = ComputeID(sampleTimePID,pitchAngle,pitchSetpoint, &pitchErrorSum, &pitchErrorOld,DMP_PITCH_Ki,DMP_PITCH_Kd);
-    rollID = ComputeID(sampleTimePID,rollAngle,rollSetpoint, &rollErrorSum, &rollErrorOld,DMP_ROLL_Ki,DMP_ROLL_Kd);
+    updateAccelAngleData(&rollAngleACC,&pitchAngleACC);
+    sampleTimeACC = (micros()-timerACC)/1000000.0/CC_FACTOR; // in Seconds!
+    timerACC=timer;
+    count=0;
     
-    mpuInterrupt = false;    
-  } 
- 
-  if(freqCounter > (CC_FACTOR*2)) // runs at ~500Hz
-  {
-    // Loop Time 0 us
-    updateRawGyroData();
-    // Loop Time 480 us
-
-
-    count++;
-    if(count%8==0)Serial.println(pitchAngle);
-
-    
-    // Optional Low Pass Filter for Gyro Signal
-    // filter it with exponentially weighed moving average (EWMA)
-    #ifdef LP_FILTER_GYRO
-      gyroPitch = LP_ALPHA_GYRO * gyroPitch + (1.0-LP_ALPHA_GYRO) * gyroPitchOld;
-      gyroPitchOld=gyroPitch;
-      gyroRoll = LP_ALPHA_GYRO * gyroRoll + (1.0-LP_ALPHA_GYRO) * gyroRollOld;
-      gyroRollOld=gyroRoll;
-    #endif
-    // Loop Time 530 us
-
-    pitchP = gyroPitch * GYRO_PITCH_Kp;
-    rollP = gyroRoll * GYRO_ROLL_Kp;   
-    
-    pitchPID = constrain((pitchP + pitchID),-maxDegPerSecondPitch,maxDegPerSecondPitch);
-    rollPID = constrain((rollP + rollID),-maxDegPerSecondRoll,maxDegPerSecondRoll);
-    // Loop Time 580 us
-    
-
-    pitchDevider = constrain(maxDegPerSecondPitch / (pitchPID + 0.000001), -15000,15000);
-    rollDevider = constrain(maxDegPerSecondRoll / (rollPID + 0.000001), -15000,15000);
-    pitchDirection = sgn(pitchDevider) * DIR_MOTOR_PITCH;
-    rollDirection = sgn(rollDevider) * DIR_MOTOR_ROLL;
-    
-    freqCounter=0;
+    {Serial.print(sampleTimeACC,5);Serial.print(" ");Serial.println(sampleTimePID,5);}  
   }
+    
+
+  gyroRoll = gyroRoll + ACC_WEIGHT * (rollAngleACC - rollSetpoint)/sampleTimeACC;
+  gyroPitch = gyroPitch + ACC_WEIGHT * (pitchAngleACC - pitchSetpoint)/sampleTimeACC;
+  pitchPID = ComputePID(sampleTimePID,gyroPitch,0.0, &pitchErrorSum, &pitchErrorOld,GYRO_PITCH_Kp,GYRO_PITCH_Ki,GYRO_PITCH_Kd,maxDegPerSecondPitch);
+  rollPID = ComputePID(sampleTimePID,gyroRoll,0.0, &rollErrorSum, &rollErrorOld,GYRO_ROLL_Kp,GYRO_ROLL_Ki,GYRO_ROLL_Kd,maxDegPerSecondRoll);
+
+  pitchDevider = constrain(maxDegPerSecondPitch / (pitchPID + 0.000001), -15000,15000);
+  pitchDirection = sgn(pitchDevider) * DIR_MOTOR_PITCH;
+  rollDevider = constrain(maxDegPerSecondRoll / (rollPID + 0.000001), -15000,15000);
+  rollDirection = sgn(rollDevider) * DIR_MOTOR_ROLL;
+
+  // Output stuff
+//  if(count == 20)
+//    {Serial.print(gyroPitch);Serial.print(" ");Serial.println((pitchAngleACC - pitchSetpoint));}
+//    {Serial.print();Serial.print(" ");Serial.println(gyroRoll);}
+//  {Serial.print(sampleTimeACC,5);Serial.print(" ");Serial.println(sampleTimePID,5);}
+//    Serial.println(sampleTimeACC,6);
+
 }
 
 
-
-
-
-
-
-
-
-
-/*    pitchDeviderTemp = constrain(maxDegPerSecondPitch / (pitchPID + 0.000001), -15000,15000);
-    rollDeviderTemp = constrain(maxDegPerSecondRoll / (rollPID + 0.000001), -15000,15000);
-    // Loop Time 680 us
-
-    #ifdef LP_FILTER_MOTOR
-      pitchDeviderTemp = LP_ALPHA_MOTOR * pitchDeviderTemp + (1.0-LP_ALPHA_MOTOR) * pitchDeviderTempOld;
-      pitchDeviderTempOld = pitchDeviderTemp;
-      rollDeviderTemp = LP_ALPHA_MOTOR * rollDeviderTemp + (1.0-LP_ALPHA_MOTOR) * rollDeviderTempOld;
-      rollDeviderTempOld=rollDeviderTemp;
-    #endif
-    // Loop Time 750 us
-    count++;   
-  }
-
-//  if(freqCounter % (CC_FACTOR * 4) == 0) // runs at ~250Hz
-  if(count>9);
-  {
-count = 0;
-    pitchDevider = pitchDeviderTemp;
-    pitchDirection = sgn(pitchDevider) * DIR_MOTOR_PITCH;
-
-    rollDevider = rollDeviderTemp;
-    rollDirection = sgn(rollDevider) * DIR_MOTOR_ROLL;
-    
-  //  Serial.println(pitchDevider);
-    freqCounter=0;
-  }
-
-*/

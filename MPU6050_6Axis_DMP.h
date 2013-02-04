@@ -249,9 +249,13 @@ const prog_uchar dmpConfig[MPU6050_DMP_CONFIG_SIZE] PROGMEM = {
 //    0x07,   0x46,   0x01,   0x9A,                     // CFG_GYRO_SOURCE inv_send_gyro
 //    0x07,   0x47,   0x04,   0xF1, 0x28, 0x30, 0x38,   // CFG_9 inv_send_gyro -> inv_construct3_fifo
 //    0x07,   0x6C,   0x04,   0xF1, 0x28, 0x30, 0x38,   // CFG_12 inv_send_accel -> inv_construct3_fifo
+#ifdef DMP_50HZ
+    0x02,   0x16,   0x02,   0x00, 0x03                // D_0_22 inv_set_fifo_rate
+#endif    
 #ifdef DMP_100HZ
-    0x02,   0x16,   0x02,   0x00, 0x01                // D_0_22 inv_set_fifo_rate
-#else
+    0x02,   0x16,   0x02,   0x00, 0x01    // D_0_22 inv_set_fifo_rate
+#endif
+#ifdef DMP_200HZ
     0x02,   0x16,   0x02,   0x00, 0x00                // D_0_22 inv_set_fifo_rate
 #endif
     // This very last 0x01 WAS a 0x09, which drops the FIFO rate down to 20 Hz. 0x07 is 25 Hz,
@@ -691,5 +695,14 @@ uint8_t MPU6050::dmpReadAndProcessFIFOPacket(uint8_t numPackets, uint8_t *proces
 uint16_t MPU6050::dmpGetFIFOPacketSize() {
     return dmpPacketSize;
 }
+
+
+
+
+
+
+
+
+
 
 #endif /* _MPU6050_6AXIS_MOTIONAPPS20_H_ */

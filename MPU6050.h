@@ -589,6 +589,7 @@ class MPU6050 {
 
         // GYRO_*OUT_* registers
         void getRotation(int16_t* x, int16_t* y, int16_t* z);
+        void getRotationXY(int16_t* x, int16_t* y);
         int16_t getRotationX();
         int16_t getRotationY();
         int16_t getRotationZ();
@@ -776,7 +777,8 @@ class MPU6050 {
         // DMP_CFG_2 register
         uint8_t getDMPConfig2();
         void setDMPConfig2(uint8_t config);
-
+        
+ 
         // special methods for MotionApps 2.0 implementation
         #ifdef MPU6050_INCLUDE_DMP_MOTIONAPPS20
             uint8_t *dmpPacketBuffer;
@@ -876,6 +878,7 @@ class MPU6050 {
             uint32_t dmpGetAccelSumOfSquare();
             void dmpOverrideQuaternion(long *q);
             uint16_t dmpGetFIFOPacketSize();
+
         #endif
 
         // special methods for MotionApps 4.1 implementation

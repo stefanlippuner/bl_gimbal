@@ -132,82 +132,25 @@ void initBlController()
   OCR0B = 0;  //D5 
 }
 
-// limits Torque for slow movements by linear scaling of PWM signal from MIN_POWER_MOTOR and MAX_POWER_MOTOR
-void fastMoveMotorVariablePower(int motorNumber, int dirStep, float degPerSecond)
-{
-  if (motorNumber == 0)
-  {
-    currentStepMotor0 += dirStep;
-    PWM_A_MOTOR0 = pwmSin[currentStepMotor0] * constrain(abs(degPerSecond)/POWER_REDUCTION_SLOPE_MOTOR_0 * MAX_POWER_MOTOR_0, MIN_POWER_MOTOR_0, MAX_POWER_MOTOR_0);
-    PWM_B_MOTOR0 = pwmSin[(uint8_t)(currentStepMotor0 + 85)] * constrain(abs(degPerSecond)/POWER_REDUCTION_SLOPE_MOTOR_0 * MAX_POWER_MOTOR_0, MIN_POWER_MOTOR_0, MAX_POWER_MOTOR_0);
-    PWM_C_MOTOR0 = pwmSin[(uint8_t)(currentStepMotor0 + 170)] * constrain(abs(degPerSecond)/POWER_REDUCTION_SLOPE_MOTOR_0 * MAX_POWER_MOTOR_0, MIN_POWER_MOTOR_0, MAX_POWER_MOTOR_0);
-  }
- 
-  if (motorNumber == 1)
-  {
-    currentStepMotor1 += dirStep;
-    PWM_A_MOTOR1 = pwmSin[currentStepMotor1] * constrain(abs(degPerSecond)/POWER_REDUCTION_SLOPE_MOTOR_1 * MAX_POWER_MOTOR_1, MIN_POWER_MOTOR_1, MAX_POWER_MOTOR_1);
-    PWM_B_MOTOR1 = pwmSin[(uint8_t)(currentStepMotor1 + 85)] * constrain(abs(degPerSecond)/POWER_REDUCTION_SLOPE_MOTOR_1 * MAX_POWER_MOTOR_1, MIN_POWER_MOTOR_1, MAX_POWER_MOTOR_1);
-    PWM_C_MOTOR1 = pwmSin[(uint8_t)(currentStepMotor1 + 170)] * constrain(abs(degPerSecond)/POWER_REDUCTION_SLOPE_MOTOR_1 * MAX_POWER_MOTOR_1, MIN_POWER_MOTOR_1, MAX_POWER_MOTOR_1);
-  }
-}
-
 
 void fastMoveMotor(int motorNumber, int dirStep)
 {
   if (motorNumber == 0)
   {
     currentStepMotor0 += dirStep;
-    PWM_A_MOTOR0 = (uint8_t)(pwmSin[currentStepMotor0] * MAX_POWER_MOTOR_0);
-    PWM_B_MOTOR0 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor0 + 85)] * MAX_POWER_MOTOR_0);
-    PWM_C_MOTOR0 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor0 + 170)] * MAX_POWER_MOTOR_0);
+    PWM_A_MOTOR0 = (uint8_t)(pwmSin[currentStepMotor0] / MAX_POWER_MOTOR_0);
+    PWM_B_MOTOR0 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor0 + 85)] / MAX_POWER_MOTOR_0);
+    PWM_C_MOTOR0 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor0 + 170)] / MAX_POWER_MOTOR_0);
   }
  
   if (motorNumber == 1)
   {
     currentStepMotor1 += dirStep;
-    PWM_A_MOTOR1 = (uint8_t)(pwmSin[currentStepMotor1] * MAX_POWER_MOTOR_1);
-    PWM_B_MOTOR1 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor1 + 85)] * MAX_POWER_MOTOR_1);
-    PWM_C_MOTOR1 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor1 + 170)] * MAX_POWER_MOTOR_1);
+    PWM_A_MOTOR1 = (uint8_t)(pwmSin[currentStepMotor1] / MAX_POWER_MOTOR_1);
+    PWM_B_MOTOR1 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor1 + 85)] / MAX_POWER_MOTOR_1);
+    PWM_C_MOTOR1 = (uint8_t)(pwmSin[(uint8_t)(currentStepMotor1 + 170)] / MAX_POWER_MOTOR_1);
   }
 }
-
-
-
-/*
-    
-    Serial.print(currentStepMotor0);
-    Serial.print(" ");
-    Serial.print((uint8_t)(currentStepMotor0+85));
-    Serial.print(" ");
-    Serial.print((uint8_t)(currentStepMotor0+170));
-    Serial.print(" ");
-    Serial.print(PWM_A_MOTOR0);
-    Serial.print(" ");
-    Serial.print(PWM_B_MOTOR0);
-    Serial.print(" ");
-    Serial.println(PWM_C_MOTOR0);    
-
-
-    Serial.print(phaseA);
-    Serial.print(" ");
-    Serial.print(phaseB);
-    Serial.print(" ");
-    Serial.print(phaseC);
-    Serial.print(" ");
-    Serial.print(pwmSin[phaseA]);
-    Serial.print(" ");
-    Serial.print(pwmSin[phaseB]);
-    Serial.print(" ");
-    Serial.println(pwmSin[phaseC]);
-*/
-
-
-
-
-
-
-
 
 
 
