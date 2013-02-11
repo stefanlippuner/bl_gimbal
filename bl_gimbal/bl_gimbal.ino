@@ -28,6 +28,14 @@ Thanks To :
 
 
 /* Change History
+043 A: 
+- introduce RC Channel input :-)
+  Use A1 and A2 as PWM input pins for Pitch and Roll, DO NOT CONNECT +5V from REC-Receiver to Controller
+- add RC input config to serial protocol  
+  Type HE in terminal to see additional Protocol stuff (min max Angles per Axis)
+- start Code optimization: atan2 now runs ~2 times faster
+
+  
 042 A: 
 - memory optimizations
 - reintroduce a way to motor power control (use fixed progmem arrays):
@@ -77,7 +85,7 @@ Hint: lower torque = lower power allows for higher P on Pitch for me.
 
 
 #define VERSION_STATUS A // A = Alpha; B = Beta , N = Normal Release
-#define VERSION 42
+#define VERSION 43
 
 
 /*************************/
@@ -90,6 +98,7 @@ Hint: lower torque = lower power allows for higher P on Pitch for me.
 #include "MPU6050_6Axis_DMP.h"
 #include "SerialCommand.h"
 #include "EEPROMAnything.h"
+#include "PinChangeInt.h"
 
 
 /*************************/
@@ -114,18 +123,22 @@ uint8_t motorNumberPitch;
 uint8_t motorNumberRoll;
 uint8_t maxPWMmotorPitch;
 uint8_t maxPWMmotorRoll;
+int8_t minRCPitch;
+int8_t maxRCPitch;
+int8_t minRCRoll;
+int8_t maxRCRoll;
 } config;
 
 void setDefaultParameters()
 {
   config.vers = VERSION;
-  config.gyroPitchKp = 3400;
+  config.gyroPitchKp = 4800;
   config.gyroPitchKi = 5;
   config.gyroPitchKd = 20;
-  config.gyroRollKp = 2800;
+  config.gyroRollKp = 8000;
   config.gyroRollKi = 5;
   config.gyroRollKd = 150;
-  config.accelWeight = 25;
+  config.accelWeight = 50;
   config.nPolesMotorPitch = 14;
   config.nPolesMotorRoll = 14;
   config.dirMotorPitch = -1;
@@ -134,6 +147,10 @@ void setDefaultParameters()
   config.motorNumberRoll = 1;
   config.maxPWMmotorPitch = 120;
   config.maxPWMmotorRoll = 180;
+  config.minRCPitch = -45;
+  config.maxRCPitch = 45;
+  config.minRCRoll = -45;
+  config.maxRCRoll = 45;
 }
 
 
@@ -201,13 +218,86 @@ unsigned long timer=0;
 unsigned long timerACC=0;
 
 
+/*************************/
+/* RC-Decoder            */
+/*************************/
+uint32_t microsRisingEdgeRoll = 0;
+uint32_t microsRisingEdgePitch = 0;
+uint16_t pulseInPWMRoll = MID_RC;
+uint16_t pulseInPWMPitch = MID_RC;
+bool updateRCRoll=false;
+bool updateRCPitch=false;
 
+// Functions
+void intDecodePWMRoll()
+{ 
+  if (PCintPort::pinState==HIGH)
+    microsRisingEdgeRoll = micros();
+  else
+  {
+    pulseInPWMRoll = (micros() - microsRisingEdgeRoll)/CC_FACTOR;
+    updateRCRoll=true;
+  }
+}
 
+void intDecodePWMPitch()
+{ 
+  if (PCintPort::pinState==HIGH)
+    microsRisingEdgePitch = micros();
+  else
+  {
+    pulseInPWMPitch = (micros() - microsRisingEdgePitch)/CC_FACTOR;
+    updateRCPitch=true;
+  }
+}
 
 
 /*************************/
 /* General Purpose Functs*/
 /*************************/
+// Org ATAN2 ~200us, fastAtan2 ~128us, ultraFastAtan2 ~92us
+// Fast arctan2
+float ultraFastAtan2(float y, float x)
+{
+  float angle; 
+  float coeff_1 = PI/4;
+   float coeff_2 = 3*coeff_1;
+   float abs_y = fabs(y)+1e-10 ;     // kludge to prevent 0/0 condition
+   if (x>=0)
+   {
+      float r = (x - abs_y) / (x + abs_y);
+      angle = coeff_1 - coeff_1 * r;
+   }
+   else
+   {
+      float r = (x + abs_y) / (abs_y - x);
+      angle = coeff_2 - coeff_1 * r;
+   }
+   if (y < 0)
+   return(-angle* (180.0f / PI));     // negate if in quad III or IV
+   else
+   return(angle* (180.0f / PI));
+}
+
+float fastAtan2(float y, float x) // in deg
+{
+  #define fp_is_neg(val) ((((byte*)&val)[3] & 0x80) != 0)
+  float z = y / x;
+  int16_t zi = abs(int16_t(z * 100));
+  int8_t y_neg = fp_is_neg(y);
+  if ( zi < 100 ){
+    if (zi > 10)
+      z = z / (1.0f + 0.28f * z * z);
+    if (fp_is_neg(x)) {
+      if (y_neg) z -= PI;
+      else z += PI;
+    }
+  } else {
+    z = (PI / 2.0f) - z / (z * z + 0.28f);
+    if (y_neg) z -= PI;}
+  z *= (180.0f / PI);
+  return z;
+}
 
 int freeRam () {
   extern int __heap_start, *__brkval; 
@@ -308,8 +398,6 @@ float ComputePID(float SampleTimeInSecs, float in, float setPoint, float *errorS
 }
 
 
-
-
 /********************************/
 /* Motor Control Routines       */
 /********************************/
@@ -365,7 +453,13 @@ void setup()
   calcSinusArray(config.maxPWMmotorPitch,pwmSinMotorPitch);
   calcSinusArray(config.maxPWMmotorRoll,pwmSinMotorRoll);
 
+  // Init RC-Input
+  pinMode(RC_PIN_ROLL, INPUT); digitalWrite(RC_PIN_ROLL, HIGH);
+  PCintPort::attachInterrupt(RC_PIN_ROLL, &intDecodePWMRoll, CHANGE);
+  pinMode(RC_PIN_PITCH, INPUT); digitalWrite(RC_PIN_PITCH, HIGH);
+  PCintPort::attachInterrupt(RC_PIN_PITCH, &intDecodePWMPitch, CHANGE);
   
+    
   // Initialize Motor Movement
   maxDegPerSecondPitch = MOTORUPDATE_FREQ * 1000.0 / N_SIN / (config.nPolesMotorPitch/2) * 360.0;
   maxDegPerSecondRoll = MOTORUPDATE_FREQ * 1000.0 / N_SIN / (config.nPolesMotorRoll/2) * 360.0;
@@ -435,33 +529,55 @@ void loop()
   // Update ACC data approximately at 50Hz to save calculation time.
   if(count == 20)
   {
-    mpu.getAcceleration(&x_val,&y_val,&z_val);
- 
     sampleTimeACC = (micros()-timerACC)/1000.0/CC_FACTOR; // in Seconds * 1000.0 to account for factor 1000 in parameters
     timerACC=timer;
     //{Serial.print(sampleTimeACC,5);Serial.print(" ");Serial.println(sampleTimePID,5);}  
+    mpu.getAcceleration(&x_val,&y_val,&z_val);
   }
-  if(count == 21) rollAngleACC =atan2(-y_val,-z_val)*57.2957795;
+  if(count == 21) rollAngleACC = 0.9 * rollAngleACC + 0.1 * ultraFastAtan2(-y_val,-z_val); //rollAngleACC = 0.8 * rollAngleACC + atan2(-y_val,-z_val)*57.2957795 * 0.2;
   if(count == 22)
   {
-     pitchAngleACC =-atan2(-x_val,-z_val)*57.2957795;
-     count=0;
+    pitchAngleACC = 0.9 * pitchAngleACC + 0.1 * -ultraFastAtan2(-x_val,-z_val);
+    count=0;
   }
   
-  //Serial.println( (micros()-timer)/CC_FACTOR);
+  
     
+  // Get Setpoint from RC-Channel if available.
+  // LPF on pitchSetpoint
+  if(updateRCPitch==true)
+  {
+    pulseInPWMPitch = constrain(pulseInPWMPitch,MIN_RC,MAX_RC);
+    pitchSetpoint = 0.025 * (config.minRCPitch + (float)(pulseInPWMPitch - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCPitch - config.minRCPitch)) + 0.975 * pitchSetpoint;
+    updateRCPitch=false;
+  }
+  if(updateRCRoll==true)
+  {
+    pulseInPWMRoll = constrain(pulseInPWMRoll,MIN_RC,MAX_RC);
+    rollSetpoint = 0.025 * (config.minRCRoll + (float)(pulseInPWMRoll - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCRoll - config.minRCRoll)) + 0.975 * rollSetpoint;
+    updateRCRoll=false;
+  }
+  
+
+//480-900
   gyroRoll = gyroRoll + config.accelWeight * (rollAngleACC - rollSetpoint)/sampleTimeACC;
   gyroPitch = gyroPitch + config.accelWeight * (pitchAngleACC - pitchSetpoint)/sampleTimeACC;
+//630-1130
   pitchPID = ComputePID(sampleTimePID,gyroPitch,0.0, &pitchErrorSum, &pitchErrorOld,config.gyroPitchKp,config.gyroPitchKi,config.gyroPitchKd,maxDegPerSecondPitch);
   rollPID = ComputePID(sampleTimePID,gyroRoll,0.0, &rollErrorSum, &rollErrorOld,config.gyroRollKp,config.gyroRollKi,config.gyroRollKd,maxDegPerSecondRoll);
+//1250-1700
 
-  pitchDevider = constrain(maxDegPerSecondPitch / (pitchPID + 0.000001), -15000,15000);
+  pitchDevider = constrain(maxDegPerSecondPitch / (pitchPID + 0.000001), -15000,15000)*2;
   pitchDirection = sgn(pitchDevider) * config.dirMotorPitch;
-  rollDevider = constrain(maxDegPerSecondRoll / (rollPID + 0.000001), -15000,15000);
+  rollDevider = constrain(maxDegPerSecondRoll / (rollPID + 0.000001), -15000,15000)*2;
   rollDirection = sgn(rollDevider) * config.dirMotorRoll;
-//  Serial.println(freeRam ());
+//1400-1850
 
+  
+
+//Serial.println( (micros()-timer)/CC_FACTOR);
   sCmd.readSerial(); 
+
 }
 
 

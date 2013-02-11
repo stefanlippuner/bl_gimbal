@@ -1,9 +1,9 @@
 void setSerialProtocol()
 {
   // Setup callbacks for SerialCommand commands
-  sCmd.addCommand("WE", we);   
-  sCmd.addCommand("RE", re); 
-  sCmd.addCommand("TC", ta);      
+  sCmd.addCommand("WE", writeEEPROM);   
+  sCmd.addCommand("RE", readEEPROM); 
+  sCmd.addCommand("TC", transmitActiveConfig);      
   sCmd.addCommand("SD", setDefaultParameters);   
   sCmd.addCommand("SP", setPitchPID);
   sCmd.addCommand("SR", setRollPID);
@@ -12,21 +12,42 @@ void setSerialProtocol()
   sCmd.addCommand("SE", setMotorPWM);
   sCmd.addCommand("SM", setMotorDirNo);
   sCmd.addCommand("GC", gyroRecalibrate);
+  sCmd.addCommand("TRC", transmitRCConfig);
+  sCmd.addCommand("SRC", setRCConfig);
   sCmd.addCommand("HE", helpMe);
   sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?")
 }
 
-void we()
+
+void transmitRCConfig()
+{
+  Serial.println(config.minRCPitch);
+  Serial.println(config.maxRCPitch);
+  Serial.println(config.minRCRoll);
+  Serial.println(config.maxRCRoll);
+}
+
+void setRCConfig()
+{
+  config.minRCPitch = atoi(sCmd.next());
+  config.maxRCPitch = atoi(sCmd.next());
+  config.minRCRoll = atoi(sCmd.next());
+  config.maxRCRoll = atoi(sCmd.next());
+}
+
+
+
+void writeEEPROM()
 {
   EEPROM_writeAnything(0, config); 
 }
 
-void re()
+void readEEPROM()
 {
   EEPROM_readAnything(0, config);  
 }
 
-void ta()
+void transmitActiveConfig()
 {
   Serial.println(config.vers);
   Serial.println(config.gyroPitchKp);
@@ -114,6 +135,8 @@ void helpMe()
   Serial.println(F("SE maxPWMmotorPitch maxPWMmotorRoll     (Used for Power limitiation on each motor 255=high, 1=low)"));
   Serial.println(F("SM dirMotorPitch dirMotorRoll motorNumberPitch motorNumberRoll"));
   Serial.println(F("GC    (Recalibrates the Gyro Offsets)"));
+  Serial.println(F("TRC   (transmitts RC Config)"));
+  Serial.println(F("SRC minRCPitch maxRCPitch minRCRoll maxRCRoll (angles -90..90)"));
   Serial.println(F("HE    (This output)"));
 }
 

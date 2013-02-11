@@ -7,10 +7,6 @@
 #define MPU6050_DEFAULT_ADDRESS     MPU6050_ADDRESS_AD0_HIGH
 
 
-
-
-
-
 // Define Brushless PWM Mode, uncomment ONE setting
 #define PWM_32KHZ_PHASE  // Resolution 8 bit for PWM
 //#define PWM_8KHZ_FAST    // Resolution 8 bit for PWM
@@ -29,6 +25,13 @@
 // Reason: Fast Motor Routine using uint8_t overflow for stepping
 #define N_SIN 256
 
+
+// RC Pins
+#define RC_PIN_ROLL A2
+#define RC_PIN_PITCH A1
+#define MID_RC 1500
+#define MIN_RC 1000
+#define MAX_RC 2000
 
 // DMP Update frequency, 100Hz should be enough for repositioning
 //#define DMP_50HZ   // is actually 100Hz due to high gyro read rate
