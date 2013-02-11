@@ -43,7 +43,7 @@ void ta()
   Serial.println(config.motorNumberPitch);
   Serial.println(config.motorNumberRoll);
   Serial.println(config.maxPWMmotorPitch);
-  Serial.println(config.maxPWMmotorRoll);  
+  Serial.println(config.maxPWMmotorRoll);
 }
 
 
@@ -68,8 +68,12 @@ void setAccelWeight()
 
 void setMotorPWM()
 {
+  cli();
   config.maxPWMmotorPitch = atoi(sCmd.next());
   config.maxPWMmotorRoll = atoi(sCmd.next());
+  calcSinusArray(config.maxPWMmotorPitch,pwmSinMotorPitch);
+  calcSinusArray(config.maxPWMmotorRoll,pwmSinMotorRoll);
+  sei();
 }
 
 void setMotorParams()
@@ -96,26 +100,26 @@ void setMotorDirNo()
 
 void helpMe()
 {
-  Serial.println("This gives you a list of all commands with usage:");
-  Serial.println("Explanation in brackets(), use Integers only !");
-  Serial.println("");
-  Serial.println("WE    (Writes active config to eeprom)");   
-  Serial.println("RE    (Restores values from eeprom to active config)");      
-  Serial.println("TC    (transmits all config values in eeprom save order)");      
-  Serial.println("SD    (Set Defaults)");
-  Serial.println("SP gyroPitchKp gyroPitchKi gyroPitchKd    (Set PID for Pitch)");
-  Serial.println("SR gyroRollKp gyroRollKi gyroRollKd    (Set PID for Roll)");
-  Serial.println("SA accelWeight    (Set Weight in accelWeight/1000)");
-  Serial.println("SF nPolesMotorPitch nPolesMotorRoll");
-  Serial.println("SE maxPWMmotorPitch maxPWMmotorRoll     (Used for Power limitiation on each motor 5=high, 1=low)");
-  Serial.println("SM dirMotorPitch dirMotorRoll motorNumberPitch motorNumberRoll");
-  Serial.println("GC    (Recalibrates the Gyro Offsets)");
-  Serial.println("HE    (This output)"); 
+  Serial.println(F("This gives you a list of all commands with usage:"));
+  Serial.println(F("Explanation in brackets(), use Integers only !"));
+  Serial.println(F(""));
+  Serial.println(F("WE    (Writes active config to eeprom)"));
+  Serial.println(F("RE    (Restores values from eeprom to active config)"));  
+  Serial.println(F("TC    (transmits all config values in eeprom save order)"));     
+  Serial.println(F("SD    (Set Defaults)"));
+  Serial.println(F("SP gyroPitchKp gyroPitchKi gyroPitchKd    (Set PID for Pitch)"));
+  Serial.println(F("SR gyroRollKp gyroRollKi gyroRollKd    (Set PID for Roll)"));
+  Serial.println(F("SA accelWeight    (Set Weight in accelWeight/1000)"));
+  Serial.println(F("SF nPolesMotorPitch nPolesMotorRoll"));
+  Serial.println(F("SE maxPWMmotorPitch maxPWMmotorRoll     (Used for Power limitiation on each motor 255=high, 1=low)"));
+  Serial.println(F("SM dirMotorPitch dirMotorRoll motorNumberPitch motorNumberRoll"));
+  Serial.println(F("GC    (Recalibrates the Gyro Offsets)"));
+  Serial.println(F("HE    (This output)"));
 }
 
 
 // This gets set as the default handler, and gets called when no other command matches.
 void unrecognized(const char *command) {
-  Serial.println("What? type in HE for Help ...");
+  Serial.println(F("What? type in HE for Help ..."));
 }
 

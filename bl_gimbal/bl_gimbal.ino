@@ -28,6 +28,11 @@ Thanks To :
 
 
 /* Change History
+042 A: 
+- memory optimizations
+- reintroduce a way to motor power control (use fixed progmem arrays):
+PWM from 1 to 255
+
 041 A: MAJOR UPDATE!!!
 - removed "config.h", added serial protocol
 -- configurable parameters now stored in eeprom
@@ -72,7 +77,7 @@ Hint: lower torque = lower power allows for higher P on Pitch for me.
 
 
 #define VERSION_STATUS A // A = Alpha; B = Beta , N = Normal Release
-#define VERSION 041
+#define VERSION 42
 
 
 /*************************/
@@ -85,6 +90,7 @@ Hint: lower torque = lower power allows for higher P on Pitch for me.
 #include "MPU6050_6Axis_DMP.h"
 #include "SerialCommand.h"
 #include "EEPROMAnything.h"
+
 
 /*************************/
 /* Config Structure      */
@@ -126,8 +132,8 @@ void setDefaultParameters()
   config.dirMotorRoll = -1;
   config.motorNumberPitch = 0;
   config.motorNumberRoll = 1;
-  config.maxPWMmotorPitch = 2;
-  config.maxPWMmotorRoll = 4;
+  config.maxPWMmotorPitch = 120;
+  config.maxPWMmotorRoll = 180;
 }
 
 
@@ -136,14 +142,11 @@ void setDefaultParameters()
 /*************************/
 SerialCommand sCmd; // Create SerialCommand object
 
-// BL Controller Variables
-prog_uint8_t pwmSin100[] = {127,130,133,136,139,143,146,149,152,155,158,161,164,167,170,173,176,179,182,184,187,190,193,195,198,200,203,205,208,210,213,215,217,219,221,224,226,228,229,231,233,235,236,238,239,241,242,244,245,246,247,248,249,250,251,251,252,253,253,254,254,254,254,254,255,254,254,254,254,254,253,253,252,251,251,250,249,248,247,246,245,244,242,241,239,238,236,235,233,231,229,228,226,224,221,219,217,215,213,210,208,205,203,200,198,195,193,190,187,184,182,179,176,173,170,167,164,161,158,155,152,149,146,143,139,136,133,130,127,124,121,118,115,111,108,105,102,99,96,93,90,87,84,81,78,75,72,70,67,64,61,59,56,54,51,49,46,44,41,39,37,35,33,30,28,26,25,23,21,19,18,16,15,13,12,10,9,8,7,6,5,4,3,3,2,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,2,3,3,4,5,6,7,8,9,10,12,13,15,16,18,19,21,23,25,26,28,30,33,35,37,39,41,44,46,49,51,54,56,59,61,64,67,70,72,75,78,81,84,87,90,93,96,99,102,105,108,111,115,118,121,124};
-prog_uint8_t pwmSin75[] = {95,97,99,102,104,107,109,111,114,116,118,120,123,125,127,129,132,134,136,138,140,142,144,146,148,150,152,153,156,157,159,161,162,164,165,168,169,171,171,173,174,176,177,178,179,180,181,183,183,184,185,186,186,187,188,188,189,189,189,190,190,190,190,190,191,190,190,190,190,190,189,189,189,188,188,187,186,186,185,184,183,183,181,180,179,178,177,176,174,173,171,171,169,168,165,164,162,161,159,157,156,153,152,150,148,146,144,142,140,138,136,134,132,129,127,125,123,120,118,116,114,111,109,107,104,102,99,97,95,93,90,88,86,83,81,78,76,74,72,69,67,65,63,60,58,56,54,52,50,48,45,44,42,40,38,36,34,33,30,29,27,26,24,22,21,19,18,17,15,14,13,12,11,9,9,7,6,6,5,4,3,3,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,2,3,3,4,5,6,6,7,9,9,11,12,13,14,15,17,18,19,21,22,24,26,27,29,30,33,34,36,38,40,42,44,45,48,50,52,54,56,58,60,63,65,67,69,72,74,76,78,81,83,86,88,90,93};
-prog_uint8_t pwmSin60[] = {76,78,79,81,83,85,87,89,91,93,94,96,98,100,102,103,105,107,109,110,112,114,115,117,118,120,121,123,124,126,127,129,130,131,132,134,135,136,137,138,139,141,141,142,143,144,145,146,147,147,148,148,149,150,150,150,151,151,151,152,152,152,152,152,153,152,152,152,152,152,151,151,151,150,150,150,149,148,148,147,147,146,145,144,143,142,141,141,139,138,137,136,135,134,132,131,130,129,127,126,124,123,121,120,118,117,115,114,112,110,109,107,105,103,102,100,98,96,94,93,91,89,87,85,83,81,79,78,76,74,72,70,69,66,64,63,61,59,57,55,54,52,50,48,46,45,43,42,40,38,36,35,33,32,30,29,27,26,24,23,22,21,19,18,16,15,15,13,12,11,10,9,9,7,7,6,5,4,4,3,3,2,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,2,3,3,4,4,5,6,7,7,9,9,10,11,12,13,15,15,16,18,19,21,22,23,24,26,27,29,30,32,33,35,36,38,40,42,43,45,46,48,50,52,54,55,57,59,61,63,64,66,69,70,72,74};
-prog_uint8_t pwmSin45[] = {57,58,59,61,62,64,65,67,68,69,71,72,73,75,76,77,79,80,81,82,84,85,86,87,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,103,104,105,106,107,107,108,108,109,110,110,111,111,112,112,112,112,113,113,113,114,114,114,114,114,114,114,114,114,114,114,113,113,113,112,112,112,112,111,111,110,110,109,108,108,107,107,106,105,104,103,103,102,101,100,99,98,97,96,95,94,93,92,91,90,89,87,86,85,84,82,81,80,79,77,76,75,73,72,71,69,68,67,65,64,62,61,59,58,57,55,54,53,51,49,48,47,45,44,43,41,40,39,37,36,35,33,32,31,30,28,27,26,25,24,22,22,20,19,18,17,16,15,14,13,12,11,11,10,9,8,8,7,6,5,5,4,4,3,3,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,2,2,3,3,4,4,5,5,6,7,8,8,9,10,11,11,12,13,14,15,16,17,18,19,20,22,22,24,25,26,27,28,30,31,32,33,35,36,37,39,40,41,43,44,45,47,48,49,51,53,54,55};
-prog_uint8_t pwmSin30[] = {38,39,39,40,41,42,43,44,45,46,47,48,49,50,51,51,52,53,54,55,56,57,57,58,59,60,60,61,62,63,63,64,65,65,66,67,67,68,68,69,69,70,70,71,71,72,72,73,73,73,74,74,74,75,75,75,75,75,75,76,76,76,76,76,76,76,76,76,76,76,75,75,75,75,75,75,74,74,74,73,73,73,72,72,71,71,70,70,69,69,68,68,67,67,66,65,65,64,63,63,62,61,60,60,59,58,57,57,56,55,54,53,52,51,51,50,49,48,47,46,45,44,43,42,41,40,39,39,38,37,36,35,34,33,32,31,30,29,28,27,27,26,25,24,23,22,21,21,20,19,18,17,16,16,15,14,13,13,12,11,11,10,9,9,8,7,7,6,6,5,5,4,4,3,3,3,2,2,2,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,2,2,2,3,3,3,4,4,5,5,6,6,7,7,8,9,9,10,11,11,12,13,13,14,15,16,16,17,18,19,20,21,21,22,23,24,25,26,27,27,28,29,30,31,32,33,34,35,36,37};
+uint8_t pwmSinMotorPitch[256];
+uint8_t pwmSinMotorRoll[256];
 
-float maxDegPerSecondPitch,maxDegPerSecondRoll;
+float maxDegPerSecondPitch;
+float maxDegPerSecondRoll;
 uint8_t currentStepMotor0 = 0;
 uint8_t currentStepMotor1 = 0;
 
@@ -161,10 +164,16 @@ int freqCounter=0;
 
 
 // Variables for MPU6050
-float gyroPitch, gyroRoll; //in deg/s
-float xGyroOffset,yGyroOffset,resolutionDevider;
-float gyroPitchOld,gyroRollOld;
-int16_t x_val, y_val, z_val;
+float gyroPitch;
+float gyroRoll; //in deg/s
+float xGyroOffset;
+float yGyroOffset;
+float resolutionDevider;
+float gyroPitchOld;
+float gyroRollOld;
+int16_t x_val;
+int16_t y_val;
+int16_t z_val;
 
 MPU6050 mpu;// Create MPU object
 
@@ -200,10 +209,24 @@ unsigned long timerACC=0;
 /* General Purpose Functs*/
 /*************************/
 
+int freeRam () {
+  extern int __heap_start, *__brkval; 
+  int v; 
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
+
 int8_t sgn(int val) {
   if (val < 0) return -1;
   if (val==0) return 0;
   return 1;
+}
+
+void calcSinusArray(uint8_t maxPWM, uint8_t *array)
+{
+  for(int i=0; i<N_SIN; i++)
+  {
+    array[i] = maxPWM / 2.0 + sin(2.0 * i / N_SIN * 3.14159265) * maxPWM / 2.0;
+  }  
 }
 /*************************/
 /* MPU6050 Routines      */
@@ -250,9 +273,6 @@ void gyroOffsetCalibration()
   
   xGyroOffset=xGyroOffset/500.0;
   yGyroOffset=yGyroOffset/500.0;
-  
-  Serial.print("X Ygro Offset = "); Serial.println(xGyroOffset);
-  Serial.print("Y Ygro Offset = "); Serial.println(yGyroOffset);
 }
 
 
@@ -303,27 +323,15 @@ ISR( TIMER1_OVF_vect )
     deviderCountPitch++;
     if(deviderCountPitch  >= abs(pitchDevider))
     {
-      fastMoveMotor(config.motorNumberPitch, pitchDirection,pwmSin100); 
-/*      if(config.maxPWMmotorPitch == 5) fastMoveMotor(config.motorNumberPitch, pitchDirection,pwmSin100); 
-      else if(config.maxPWMmotorPitch == 4) fastMoveMotor(config.motorNumberPitch, pitchDirection,pwmSin75); 
-      else if(config.maxPWMmotorPitch == 3) fastMoveMotor(config.motorNumberPitch, pitchDirection,pwmSin60); 
-      else if(config.maxPWMmotorPitch == 2) fastMoveMotor(config.motorNumberPitch, pitchDirection,pwmSin45); 
-      else if(config.maxPWMmotorPitch == 1) fastMoveMotor(config.motorNumberPitch, pitchDirection,pwmSin30);
-      else fastMoveMotor(config.motorNumberPitch, pitchDirection,pwmSin100); 
-*/     deviderCountPitch=0;
+      fastMoveMotor(config.motorNumberPitch, pitchDirection,pwmSinMotorPitch); 
+      deviderCountPitch=0;
     }
     
     deviderCountRoll++;
     if(deviderCountRoll >= abs(rollDevider))
     {
-      fastMoveMotor(config.motorNumberRoll, rollDirection,pwmSin100);
-/*      if(config.maxPWMmotorRoll == 5) fastMoveMotor(config.motorNumberRoll, rollDirection,pwmSin100);
-      else if(config.maxPWMmotorRoll == 4) fastMoveMotor(config.motorNumberRoll, rollDirection,pwmSin75);
-      else if(config.maxPWMmotorRoll == 3) fastMoveMotor(config.motorNumberRoll, rollDirection,pwmSin60);
-      else if(config.maxPWMmotorRoll == 2) fastMoveMotor(config.motorNumberRoll, rollDirection,pwmSin45);
-      else if(config.maxPWMmotorRoll == 1) fastMoveMotor(config.motorNumberRoll, rollDirection,pwmSin30);
-      else fastMoveMotor(config.motorNumberRoll, rollDirection,pwmSin100);
-*/      deviderCountRoll=0;
+      fastMoveMotor(config.motorNumberRoll, rollDirection,pwmSinMotorRoll);
+      deviderCountRoll=0;
     }
     freqCounter=0;
   }
@@ -338,14 +346,11 @@ void setup()
     
   // Start Serial Port
   Serial.begin(115200);
-  Serial.println("BLGC Starting Initialization ...");
 
   // Set Serial Protocol Commands
-  Serial.println(F("Starting Serial Protocol ..."));
   setSerialProtocol();
   
   // Read Config or fill with default settings
-  Serial.println(F("Initializing default values from EEPROM ..."));
   if(EEPROM.read(0)==VERSION)
   {
     EEPROM_readAnything(0, config);
@@ -355,6 +360,11 @@ void setup()
     setDefaultParameters();
     EEPROM_writeAnything(0, config);
   }
+
+  // Init Sinus Arrays  
+  calcSinusArray(config.maxPWMmotorPitch,pwmSinMotorPitch);
+  calcSinusArray(config.maxPWMmotorRoll,pwmSinMotorRoll);
+
   
   // Initialize Motor Movement
   maxDegPerSecondPitch = MOTORUPDATE_FREQ * 1000.0 / N_SIN / (config.nPolesMotorPitch/2) * 360.0;
@@ -376,16 +386,13 @@ void setup()
   
   gyroOffsetCalibration();
   
-  Serial.println(F("Init MPU done ..."));
   if(mpu.testConnection()) 
-    Serial.println(F("MPU6050 connection successful"));
+    Serial.println(F("MPU6050 ok"));
   
   LEDPIN_ON
   
   initResolutionDevider();
-  Serial.print(F("Gyro resolution devider in LSB/deg/s = "));
-  Serial.println(resolutionDevider);
-
+  
    // Init BL Controller
   initBlController();
   delay(10 * CC_FACTOR);
@@ -393,24 +400,22 @@ void setup()
   // Move Motors to ensure function
   for(int i=0; i<255; i++)
   {
-    fastMoveMotor(config.motorNumberRoll, 1,pwmSin100);
-    fastMoveMotor(config.motorNumberPitch, 1,pwmSin100);
+    fastMoveMotor(config.motorNumberRoll, 1,pwmSinMotorRoll);
+    fastMoveMotor(config.motorNumberPitch, 1,pwmSinMotorPitch);
   }
   for(int i=0; i<255; i++)
   {
-    fastMoveMotor(config.motorNumberRoll, -1,pwmSin100); 
-    fastMoveMotor(config.motorNumberPitch, -1,pwmSin100); 
+    fastMoveMotor(config.motorNumberRoll, -1,pwmSinMotorRoll); 
+    fastMoveMotor(config.motorNumberPitch, -1,pwmSinMotorPitch); 
     delay(15 * CC_FACTOR);
   }
   
   delay(40 * CC_FACTOR);
     
-  Serial.println(F("Init BL Control done ..."));
-  
  // Initialize timer
   timer=micros();
 
-  Serial.println(F("READY! Type HE for help, activate NL in Arduino Terminal!!!..."));
+  Serial.println(F("GO! Type HE for help, activate NL in Arduino Terminal!"));
 }
 
 /**********************************************/
@@ -454,6 +459,7 @@ void loop()
   pitchDirection = sgn(pitchDevider) * config.dirMotorPitch;
   rollDevider = constrain(maxDegPerSecondRoll / (rollPID + 0.000001), -15000,15000);
   rollDirection = sgn(rollDevider) * config.dirMotorRoll;
+//  Serial.println(freeRam ());
 
   sCmd.readSerial(); 
 }

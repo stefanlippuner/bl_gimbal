@@ -44,9 +44,9 @@ SerialCommand::SerialCommand()
  */
 void SerialCommand::addCommand(const char *command, void (*function)()) {
   #ifdef SERIALCOMMAND_DEBUG
-    Serial.print("Adding command (");
+    Serial.print(F("Adding command ("));
     Serial.print(commandCount);
-    Serial.print("): ");
+    Serial.print(F("): "));
     Serial.println(command);
   #endif
 
@@ -79,7 +79,7 @@ void SerialCommand::readSerial() {
 
     if (inChar == term) {     // Check for the terminator (default '\r') meaning end of command
       #ifdef SERIALCOMMAND_DEBUG
-        Serial.print("Received: ");
+        Serial.print(F("Received: "));
         Serial.println(buffer);
       #endif
 
@@ -88,17 +88,17 @@ void SerialCommand::readSerial() {
         boolean matched = false;
         for (int i = 0; i < commandCount; i++) {
           #ifdef SERIALCOMMAND_DEBUG
-            Serial.print("Comparing [");
+            Serial.print(F("Comparing ["));
             Serial.print(command);
-            Serial.print("] to [");
+            Serial.print(F("] to ["));
             Serial.print(commandList[i].command);
-            Serial.println("]");
+            Serial.println(F("]"));
           #endif
 
           // Compare the found command against the list of known commands for a match
           if (strncmp(command, commandList[i].command, SERIALCOMMAND_MAXCOMMANDLENGTH) == 0) {
             #ifdef SERIALCOMMAND_DEBUG
-              Serial.print("Matched Command: ");
+              Serial.print(F("Matched Command: "));
               Serial.println(command);
             #endif
 
@@ -120,7 +120,7 @@ void SerialCommand::readSerial() {
         buffer[bufPos] = '\0';      // Null terminate
       } else {
         #ifdef SERIALCOMMAND_DEBUG
-          Serial.println("Line buffer is full - increase SERIALCOMMAND_BUFFER");
+          Serial.println(F("Line buffer is full - increase SERIALCOMMAND_BUFFER"));
         #endif
       }
     }
