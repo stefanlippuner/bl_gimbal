@@ -28,6 +28,34 @@ Thanks To :
 
 
 /* Change History
+044 A: 
+- add choice between absolute and proportional RC positioning
+- add continious angle output for debugging/GUI purposes
+- add choice between raw ACC and DMP for Horizont stabilization
+  (DMP is experimental for now, PIDs have to be changed/lowered)
+  (Default is ACC)
+- Serial Protocol:
+WE    (Writes active config to eeprom)
+RE    (Restores values from eeprom to active config)
+TC    (transmits all config values in eeprom save order)
+SD    (Set Defaults)
+SP gyroPitchKp gyroPitchKi gyroPitchKd    (Set PID for Pitch)
+SR gyroRollKp gyroRollKi gyroRollKd    (Set PID for Roll)
+SA accelWeight    (Set Weight in accelWeight/1000)
+SF nPolesMotorPitch nPolesMotorRoll
+SE maxPWMmotorPitch maxPWMmotorRoll     (Used for Power limitiation on each motor 255=high, 1=low)
+SM dirMotorPitch dirMotorRoll motorNumberPitch motorNumberRoll
+GC    (Recalibrates the Gyro Offsets)
+TRC   (transmitts RC Config)
+SRC minRCPitch maxRCPitch minRCRoll maxRCRoll (angles -90..90)
+SCA rcAbsolute (1 = true, RC control is absolute; 0 = false, RC control is proportional)
+TCA   (Transmit RC control absolute or not)
+UAC useACC (1 = true, ACC; 0 = false, DMP)
+TAC   (Transmit ACC status)
+OAC accOutput (Toggle Angle output in ACC mode: 1 = true, 0 = false)
+ODM dmpOutput  (Toggle Angle output in DMP mode: 1 = true, 0 = false)
+HE    (This output)
+
 043 A: 
 - introduce RC Channel input :-)
   Use A1 and A2 as PWM input pins for Pitch and Roll, DO NOT CONNECT +5V from REC-Receiver to Controller
@@ -35,7 +63,6 @@ Thanks To :
   Type HE in terminal to see additional Protocol stuff (min max Angles per Axis)
 - start Code optimization: atan2 now runs ~2 times faster
 
-  
 042 A: 
 - memory optimizations
 - reintroduce a way to motor power control (use fixed progmem arrays):
@@ -47,6 +74,8 @@ PWM from 1 to 255
 -- relevant parameters can be changes online now
 - Still: floating point math!!!
 -CAVEAT only 100%Power for now, was not able to finish that this weekend.
+
+040 A: Test version, not published
 
 039 A: MAJOR REWORK!!!
 - Removed usage of DMP completely
@@ -60,6 +89,7 @@ Hint: lower torque = lower power allows for higher P on Pitch for me.
 ( No more beeping :-), i dont care for energy loss at the moment )
 
 038 A: Test version, not published
+
 037 A:
 - NEW: Motor Power Management. Two Options: 
   -- Fixed max Torque/Power (caveat: 
@@ -85,7 +115,7 @@ Hint: lower torque = lower power allows for higher P on Pitch for me.
 
 
 #define VERSION_STATUS A // A = Alpha; B = Beta , N = Normal Release
-#define VERSION 43
+#define VERSION 44
 
 
 /*************************/
@@ -127,6 +157,10 @@ int8_t minRCPitch;
 int8_t maxRCPitch;
 int8_t minRCRoll;
 int8_t maxRCRoll;
+bool rcAbsolute;
+bool useACC;
+bool accOutput;
+bool dmpOutput;
 } config;
 
 void setDefaultParameters()
@@ -138,7 +172,7 @@ void setDefaultParameters()
   config.gyroRollKp = 8000;
   config.gyroRollKi = 5;
   config.gyroRollKd = 150;
-  config.accelWeight = 50;
+  config.accelWeight = 15;
   config.nPolesMotorPitch = 14;
   config.nPolesMotorRoll = 14;
   config.dirMotorPitch = -1;
@@ -151,6 +185,10 @@ void setDefaultParameters()
   config.maxRCPitch = 45;
   config.minRCRoll = -45;
   config.maxRCRoll = 45;
+  config.rcAbsolute = false;
+  config.useACC = true;
+  config.accOutput=false;
+  config.dmpOutput=false;
 }
 
 
@@ -192,6 +230,14 @@ int16_t x_val;
 int16_t y_val;
 int16_t z_val;
 
+bool dmpReady = false;  // set true if DMP init was successful
+uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
+uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
+uint8_t fifoBuffer[18]; // FIFO storage buffer
+Quaternion q;           // [w, x, y, z]         quaternion container
+volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
+
+
 MPU6050 mpu;// Create MPU object
 
 
@@ -225,6 +271,8 @@ uint32_t microsRisingEdgeRoll = 0;
 uint32_t microsRisingEdgePitch = 0;
 uint16_t pulseInPWMRoll = MID_RC;
 uint16_t pulseInPWMPitch = MID_RC;
+float pitchRCSpeed=0.0;
+float rollRCSpeed=0.0;
 bool updateRCRoll=false;
 bool updateRCPitch=false;
 
@@ -348,6 +396,11 @@ void updateRawGyroData(float* gyroX, float* gyroY)
   *gyroY = (y-yGyroOffset)/resolutionDevider;//(mpu.getRotationX() - rollGyroOffset)/resolutionDevider;
 }
 
+// Interrupt Handler
+void dmpDataReady() 
+{
+  mpuInterrupt = true;
+}
 
 // This functions performs an initial gyro offset calibration
 // Board should be still for some seconds 
@@ -471,22 +524,38 @@ void setup()
   TWCR = 1<<TWEN;                            // enable twi module, no interrupt
  
   // Initialize MPU 
-  mpu.setClockSource(MPU6050_CLOCK_PLL_ZGYRO);          // Set Clock to ZGyro
-  mpu.setFullScaleGyroRange(MPU6050_GYRO_FS);           // Set Gyro Sensitivity to config.h
-  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);       //+- 2G
-  mpu.setDLPFMode(MPU6050_DLPF_BW);                     // Set Gyro Low Pass Filter to config.h
-  mpu.setRate(0);                                       // 0=1kHz, 1=500Hz, 2=333Hz, 3=250Hz, 4=200Hz
-  mpu.setSleepEnabled(false); 
+
+  initResolutionDevider();
+  
+  if(config.useACC==1)
+  {
+    mpu.setClockSource(MPU6050_CLOCK_PLL_ZGYRO);          // Set Clock to ZGyro
+    mpu.setFullScaleGyroRange(MPU6050_GYRO_FS);           // Set Gyro Sensitivity to config.h
+    mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);       //+- 2G
+    mpu.setDLPFMode(MPU6050_DLPF_BW);                     // Set Gyro Low Pass Filter to config.h
+    mpu.setRate(0);                                       // 0=1kHz, 1=500Hz, 2=333Hz, 3=250Hz, 4=200Hz
+    mpu.setSleepEnabled(false); 
+  }
+  else // USE DMP
+  {
+    mpu.initialize();
+
+    mpu.initialize();
+    mpu.dmpInitialize();
+    mpu.setDMPEnabled(true);
+    attachInterrupt(0, dmpDataReady, RISING);
+    Serial.println(F("Init DMP MPU6050 competely done ... :-)"));
+    resolutionDevider = 16.4; // Overwrite resolution Devider, for DMP Usage sensitivity is +-2000deg/s, unfortunately
+    mpu.setRate(0); // 0=1kHz, 1=500Hz, 2=333Hz, 3=250Hz, 4=200Hz
+    mpu.resetDMP();
+  }
+  if(mpu.testConnection()) Serial.println(F("MPU6050 ok"));  
   
   gyroOffsetCalibration();
   
-  if(mpu.testConnection()) 
-    Serial.println(F("MPU6050 ok"));
-  
   LEDPIN_ON
   
-  initResolutionDevider();
-  
+ 
    // Init BL Controller
   initBlController();
   delay(10 * CC_FACTOR);
@@ -510,6 +579,11 @@ void setup()
   timer=micros();
 
   Serial.println(F("GO! Type HE for help, activate NL in Arduino Terminal!"));
+
+  // Required to prevent NAN error from MPU
+  mpu.resetDMP();
+  mpu.resetFIFO(); 
+  
 }
 
 /**********************************************/
@@ -518,7 +592,7 @@ void setup()
 int count=0;
 void loop() 
 {
-  count++;
+  
 
   sampleTimePID = (micros()-timer)/1000000.0/CC_FACTOR; // in Seconds!
   timer = micros();
@@ -526,42 +600,128 @@ void loop()
   // Update raw Gyro
   updateRawGyroData(&gyroRoll,&gyroPitch);
     
-  // Update ACC data approximately at 50Hz to save calculation time.
-  if(count == 20)
+  // Update DMP data approximately at 50Hz to save calculation time.
+
+
+  if(config.useACC==1)
   {
-    sampleTimeACC = (micros()-timerACC)/1000.0/CC_FACTOR; // in Seconds * 1000.0 to account for factor 1000 in parameters
-    timerACC=timer;
-    //{Serial.print(sampleTimeACC,5);Serial.print(" ");Serial.println(sampleTimePID,5);}  
-    mpu.getAcceleration(&x_val,&y_val,&z_val);
+    count++;
+    // Update ACC data approximately at 50Hz to save calculation time.
+    if(count == 20)
+    {
+      sampleTimeACC = (micros()-timerACC)/1000.0/CC_FACTOR; // in Seconds * 1000.0 to account for factor 1000 in parameters
+      timerACC=timer;
+      //{Serial.print(sampleTimeACC,5);Serial.print(" ");Serial.println(sampleTimePID,5);}  
+      mpu.getAcceleration(&x_val,&y_val,&z_val);
+    }
+    if(count == 21) rollAngleACC = 0.9 * rollAngleACC + 0.1 * ultraFastAtan2(-y_val,-z_val); //rollAngleACC = 0.8 * rollAngleACC + atan2(-y_val,-z_val)*57.2957795 * 0.2;
+    if(count == 22)
+    {
+      pitchAngleACC = 0.9 * pitchAngleACC + 0.1 * -ultraFastAtan2(-x_val,-z_val);
+      count=0;
+      if(config.accOutput==1){Serial.print(pitchAngleACC);Serial.print(" ACC ");Serial.println(rollAngleACC);}
+//      {Serial.print(gyroPitch);Serial.print(" ACC G ");Serial.println(gyroRoll);}
+    }
   }
-  if(count == 21) rollAngleACC = 0.9 * rollAngleACC + 0.1 * ultraFastAtan2(-y_val,-z_val); //rollAngleACC = 0.8 * rollAngleACC + atan2(-y_val,-z_val)*57.2957795 * 0.2;
-  if(count == 22)
+  else // Use DMP
   {
-    pitchAngleACC = 0.9 * pitchAngleACC + 0.1 * -ultraFastAtan2(-x_val,-z_val);
-    count=0;
+    if(count == 2)
+    {
+      pitchAngleACC = -asin(-2.0*(q.x * q.z - q.w * q.y)) * 180.0/M_PI;
+      count=0;
+      if(config.dmpOutput==1){Serial.print(pitchAngleACC);Serial.print(" DMP ");Serial.println(rollAngleACC);}
+//      {Serial.print(gyroPitch);Serial.print(" DMP G ");Serial.println(gyroRoll);}
+    }
+    if(count == 1)
+    {
+      rollAngleACC = ultraFastAtan2(2.0*(q.y * q.z + q.w * q.x), q.w * q.w - q.x * q.x - q.y * q.y + q.z * q.z); 
+      rollAngleACC = -1*(sgn(rollAngleACC) * 180.0 - rollAngleACC);
+      count++;
+    }
+    if(mpuInterrupt)
+    {
+      sampleTimeACC = (micros()-timerACC)/1000.0/CC_FACTOR; // in Seconds * 1000.0 to account for factor 1000 in parameters
+      timerACC=timer;
+      mpu.getFIFOBytes(fifoBuffer, 18); // I2C 800000L : 1300-1308 micros fo 42 bytes, ~540 micros for 16bytes
+      mpu.dmpGetQuaternion(&q, fifoBuffer); // I2C 800000L : 64-68 micros
+      mpuInterrupt = false;
+      count++;
+    }
   }
   
+//      {Serial.print(pitchAngleACC);Serial.print(" ");Serial.println(rollAngleACC);}  
   
     
-  // Get Setpoint from RC-Channel if available.
-  // LPF on pitchSetpoint
-  if(updateRCPitch==true)
+  if(config.rcAbsolute==1) // Absolute RC control
   {
-    pulseInPWMPitch = constrain(pulseInPWMPitch,MIN_RC,MAX_RC);
-    pitchSetpoint = 0.025 * (config.minRCPitch + (float)(pulseInPWMPitch - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCPitch - config.minRCPitch)) + 0.975 * pitchSetpoint;
-    updateRCPitch=false;
+    // Get Setpoint from RC-Channel if available.
+    // LPF on pitchSetpoint
+    if(updateRCPitch==true)
+    {
+      pulseInPWMPitch = constrain(pulseInPWMPitch,MIN_RC,MAX_RC);
+      pitchSetpoint = 0.025 * (config.minRCPitch + (float)(pulseInPWMPitch - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCPitch - config.minRCPitch)) + 0.975 * pitchSetpoint;
+      updateRCPitch=false;
+    }
+    if(updateRCRoll==true)
+    {
+      pulseInPWMRoll = constrain(pulseInPWMRoll,MIN_RC,MAX_RC);
+      rollSetpoint = 0.025 * (config.minRCRoll + (float)(pulseInPWMRoll - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCRoll - config.minRCRoll)) + 0.975 * rollSetpoint;
+      updateRCRoll=false;
+    }
   }
-  if(updateRCRoll==true)
+  else // Proportional RC control
   {
-    pulseInPWMRoll = constrain(pulseInPWMRoll,MIN_RC,MAX_RC);
-    rollSetpoint = 0.025 * (config.minRCRoll + (float)(pulseInPWMRoll - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCRoll - config.minRCRoll)) + 0.975 * rollSetpoint;
-    updateRCRoll=false;
+    if(updateRCPitch==true)
+    {
+      pulseInPWMPitch = constrain(pulseInPWMPitch,MIN_RC,MAX_RC);
+      if(pulseInPWMPitch>=MID_RC+RC_DEADBAND)
+      {
+        pitchRCSpeed = 0.1 * (float)(pulseInPWMPitch - (MID_RC + RC_DEADBAND))/ (float)(MAX_RC - (MID_RC + RC_DEADBAND)) + 0.9 * pitchRCSpeed;
+      }
+      else if(pulseInPWMPitch<=MID_RC-RC_DEADBAND)
+      {
+        pitchRCSpeed = -0.1 * (float)((MID_RC - RC_DEADBAND) - pulseInPWMPitch)/ (float)((MID_RC - RC_DEADBAND)-MIN_RC) + 0.9 * pitchRCSpeed;
+      }
+      else pitchRCSpeed = 0.0;
+      updateRCPitch=false;
+    }
+    if(updateRCRoll==true)
+    {
+      pulseInPWMRoll = constrain(pulseInPWMRoll,MIN_RC,MAX_RC);
+      if(pulseInPWMRoll>=MID_RC+RC_DEADBAND)
+      {
+        rollRCSpeed = 0.1 * (float)(pulseInPWMRoll - (MID_RC + RC_DEADBAND))/ (float)(MAX_RC - (MID_RC + RC_DEADBAND)) + 0.9 * rollRCSpeed;
+      }
+      else if(pulseInPWMRoll<=MID_RC-RC_DEADBAND)
+      {
+        rollRCSpeed = -0.1 * (float)((MID_RC - RC_DEADBAND) - pulseInPWMRoll)/ (float)((MID_RC - RC_DEADBAND)-MIN_RC) + 0.9 * rollRCSpeed;
+      }
+      else rollRCSpeed = 0.0;
+      updateRCRoll=false;
+    }
   }
-  
+ 
+ //480-900
+  if((fabs(rollRCSpeed)>0.0)&&(rollAngleACC<config.maxRCRoll)&&(rollAngleACC>config.minRCRoll))
+  {
+    gyroRoll = gyroRoll + config.accelWeight * rollRCSpeed * RC_GAIN;
+    rollSetpoint = rollAngleACC;
+  }
+  else
+    gyroRoll = gyroRoll + config.accelWeight * (rollAngleACC - rollSetpoint) /sampleTimeACC;
 
-//480-900
-  gyroRoll = gyroRoll + config.accelWeight * (rollAngleACC - rollSetpoint)/sampleTimeACC;
-  gyroPitch = gyroPitch + config.accelWeight * (pitchAngleACC - pitchSetpoint)/sampleTimeACC;
+  if((fabs(pitchRCSpeed)>0.0)&&(pitchAngleACC<config.maxRCPitch)&&(pitchAngleACC>config.minRCPitch))
+  {
+    gyroPitch = gyroPitch + config.accelWeight * pitchRCSpeed * RC_GAIN;
+    pitchSetpoint = pitchAngleACC;
+  }
+  else
+    gyroPitch = gyroPitch + config.accelWeight * (pitchAngleACC - pitchSetpoint) /sampleTimeACC;
+      
+
+//     pitchSetpoint=constrain(pitchSetpoint,config.minRCPitch,config.maxRCPitch);
+//      rollSetpoint=constrain(rollSetpoint,config.minRCRoll,config.maxRCRoll);
+
 //630-1130
   pitchPID = ComputePID(sampleTimePID,gyroPitch,0.0, &pitchErrorSum, &pitchErrorOld,config.gyroPitchKp,config.gyroPitchKi,config.gyroPitchKd,maxDegPerSecondPitch);
   rollPID = ComputePID(sampleTimePID,gyroRoll,0.0, &rollErrorSum, &rollErrorOld,config.gyroRollKp,config.gyroRollKi,config.gyroRollKd,maxDegPerSecondRoll);

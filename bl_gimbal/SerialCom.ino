@@ -14,8 +14,48 @@ void setSerialProtocol()
   sCmd.addCommand("GC", gyroRecalibrate);
   sCmd.addCommand("TRC", transmitRCConfig);
   sCmd.addCommand("SRC", setRCConfig);
+  sCmd.addCommand("SCA", setRCAbsolute);
+  sCmd.addCommand("TCA", transmitRCAbsolute);
+  sCmd.addCommand("UAC", setUseACC);
+  sCmd.addCommand("TAC", transmitUseACC);
+  sCmd.addCommand("OAC", toggleACCOutput);
+  sCmd.addCommand("ODM", toggleDMPOutput);
   sCmd.addCommand("HE", helpMe);
   sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?")
+}
+
+
+void transmitUseACC()
+{
+  Serial.println(config.useACC);
+}
+
+void toggleACCOutput()
+{
+  int temp = atoi(sCmd.next());
+  if(temp==1)
+    config.accOutput = true;
+  else
+    config.accOutput = false;
+}
+
+void toggleDMPOutput()
+{
+  int temp = atoi(sCmd.next());
+  if(temp==1)
+    config.dmpOutput = true;
+  else
+    config.dmpOutput = false;
+}
+
+
+void setUseACC()
+{
+  int temp = atoi(sCmd.next());
+  if(temp==1)
+    config.useACC = true;
+  else
+    config.useACC = false;
 }
 
 
@@ -26,6 +66,22 @@ void transmitRCConfig()
   Serial.println(config.minRCRoll);
   Serial.println(config.maxRCRoll);
 }
+
+void transmitRCAbsolute()
+{
+  Serial.println(config.rcAbsolute);
+}
+
+
+void setRCAbsolute()
+{
+  int temp = atoi(sCmd.next());
+  if(temp==1)
+    config.rcAbsolute = true;
+  else
+    config.rcAbsolute = false;
+}
+
 
 void setRCConfig()
 {
@@ -137,6 +193,12 @@ void helpMe()
   Serial.println(F("GC    (Recalibrates the Gyro Offsets)"));
   Serial.println(F("TRC   (transmitts RC Config)"));
   Serial.println(F("SRC minRCPitch maxRCPitch minRCRoll maxRCRoll (angles -90..90)"));
+  Serial.println(F("SCA rcAbsolute (1 = true, RC control is absolute; 0 = false, RC control is proportional)"));
+  Serial.println(F("TCA   (Transmit RC control absolute or not)"));
+  Serial.println(F("UAC useACC (1 = true, ACC; 0 = false, DMP)"));
+  Serial.println(F("TAC   (Transmit ACC status)"));
+  Serial.println(F("OAC accOutput (Toggle Angle output in ACC mode: 1 = true, 0 = false)"));
+  Serial.println(F("ODM dmpOutput  (Toggle Angle output in DMP mode: 1 = true, 0 = false)"));
   Serial.println(F("HE    (This output)"));
 }
 

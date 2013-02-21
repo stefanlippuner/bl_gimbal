@@ -32,9 +32,11 @@
 #define MID_RC 1500
 #define MIN_RC 1000
 #define MAX_RC 2000
+#define RC_DEADBAND 50
+#define RC_GAIN 5;
 
 // DMP Update frequency, 100Hz should be enough for repositioning
-//#define DMP_50HZ   // is actually 100Hz due to high gyro read rate
+#define DMP_50HZ   // is actually 100Hz due to high gyro read rate
 //#define DMP_100HZ
 //#define DMP_200HZ
 
