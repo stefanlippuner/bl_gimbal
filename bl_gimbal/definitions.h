@@ -13,7 +13,7 @@
 //#define PWM_4KHZ_PHASE   // Resolution 8 bit for PWM
 //#define NO_PWM_LOOP
 
-#define MOTORUPDATE_FREQ 8 //in kHz 1,2,4,8 for 32kHz, 1,2,4 for 4kHz
+#define MOTORUPDATE_FREQ 32 //in kHz 1,2,4,8 for 32kHz, 1,2,4 for 4kHz
 
 // Do not change for now
 #define MPU6050_GYRO_FS MPU6050_GYRO_FS_250  // +-250,500,1000,2000 deg/s
@@ -25,6 +25,8 @@
 // Reason: Fast Motor Routine using uint8_t overflow for stepping
 #define N_SIN 256
 
+#define SCALE_ACC 10000.0
+#define SCALE_PID_PARAMS 100.0
 
 // RC Pins
 #define RC_PIN_ROLL A2
@@ -33,7 +35,6 @@
 #define MIN_RC 1000
 #define MAX_RC 2000
 #define RC_DEADBAND 50
-#define RC_GAIN 5;
 
 // DMP Update frequency, 100Hz should be enough for repositioning
 #define DMP_50HZ   // is actually 100Hz due to high gyro read rate

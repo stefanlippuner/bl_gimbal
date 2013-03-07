@@ -14,8 +14,10 @@ void setSerialProtocol()
   sCmd.addCommand("GC", gyroRecalibrate);
   sCmd.addCommand("TRC", transmitRCConfig);
   sCmd.addCommand("SRC", setRCConfig);
+  sCmd.addCommand("SRG", setRCGain);
   sCmd.addCommand("SCA", setRCAbsolute);
   sCmd.addCommand("TCA", transmitRCAbsolute);
+  sCmd.addCommand("TRG", transmitRCGain);
   sCmd.addCommand("UAC", setUseACC);
   sCmd.addCommand("TAC", transmitUseACC);
   sCmd.addCommand("OAC", toggleACCOutput);
@@ -23,7 +25,6 @@ void setSerialProtocol()
   sCmd.addCommand("HE", helpMe);
   sCmd.setDefaultHandler(unrecognized);      // Handler for command that isn't matched  (says "What?")
 }
-
 
 void transmitUseACC()
 {
@@ -48,7 +49,6 @@ void toggleDMPOutput()
     config.dmpOutput = false;
 }
 
-
 void setUseACC()
 {
   int temp = atoi(sCmd.next());
@@ -57,7 +57,6 @@ void setUseACC()
   else
     config.useACC = false;
 }
-
 
 void transmitRCConfig()
 {
@@ -72,6 +71,15 @@ void transmitRCAbsolute()
   Serial.println(config.rcAbsolute);
 }
 
+void setRCGain()
+{
+    config.rcGain = atoi(sCmd.next());
+}
+
+void transmitRCGain()
+{
+  Serial.println(config.rcGain);
+}
 
 void setRCAbsolute()
 {
@@ -82,7 +90,6 @@ void setRCAbsolute()
     config.rcAbsolute = false;
 }
 
-
 void setRCConfig()
 {
   config.minRCPitch = atoi(sCmd.next());
@@ -91,8 +98,6 @@ void setRCConfig()
   config.maxRCRoll = atoi(sCmd.next());
 }
 
-
-
 void writeEEPROM()
 {
   EEPROM_writeAnything(0, config); 
@@ -100,7 +105,8 @@ void writeEEPROM()
 
 void readEEPROM()
 {
-  EEPROM_readAnything(0, config);  
+  EEPROM_readAnything(0, config); 
+  recalcMotorStuff(); 
 }
 
 void transmitActiveConfig()
@@ -123,17 +129,16 @@ void transmitActiveConfig()
   Serial.println(config.maxPWMmotorRoll);
 }
 
-
 void setPitchPID()
 {
-  config.gyroPitchKp = atoi(sCmd.next());
+  config.gyroPitchKp = atol(sCmd.next());
   config.gyroPitchKi = atoi(sCmd.next());
   config.gyroPitchKd = atoi(sCmd.next());
 }
 
 void setRollPID()
 {
-  config.gyroRollKp = atoi(sCmd.next());
+  config.gyroRollKp = atol(sCmd.next());
   config.gyroRollKi = atoi(sCmd.next());
   config.gyroRollKd = atoi(sCmd.next());
 }
@@ -145,21 +150,16 @@ void setAccelWeight()
 
 void setMotorPWM()
 {
-  cli();
   config.maxPWMmotorPitch = atoi(sCmd.next());
   config.maxPWMmotorRoll = atoi(sCmd.next());
-  calcSinusArray(config.maxPWMmotorPitch,pwmSinMotorPitch);
-  calcSinusArray(config.maxPWMmotorRoll,pwmSinMotorRoll);
-  sei();
+  recalcMotorStuff();
 }
 
 void setMotorParams()
 {
   config.nPolesMotorPitch = atoi(sCmd.next());
   config.nPolesMotorRoll = atoi(sCmd.next());
-  // Initialize Motor Movement
-  maxDegPerSecondPitch = MOTORUPDATE_FREQ * 1000.0 / N_SIN / (config.nPolesMotorPitch/2) * 360.0;
-  maxDegPerSecondRoll = MOTORUPDATE_FREQ * 1000.0 / N_SIN / (config.nPolesMotorRoll/2) * 360.0;
+  recalcMotorStuff();
 }
 
 void gyroRecalibrate()
@@ -202,9 +202,8 @@ void helpMe()
   Serial.println(F("HE    (This output)"));
 }
 
-
-// This gets set as the default handler, and gets called when no other command matches.
-void unrecognized(const char *command) {
+void unrecognized(const char *command) 
+{
   Serial.println(F("What? type in HE for Help ..."));
 }
 

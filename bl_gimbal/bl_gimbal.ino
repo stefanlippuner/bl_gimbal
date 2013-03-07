@@ -1,25 +1,34 @@
+
 /*
-Brushless Gimbal Controller by 
-Ludwig Färber 
-Alexander Rehfeld
-Christian Winkler
+Brushless Gimbal Controller Software by Christian Winkler (C) 2013
+
+Brushless Gimbal Controller Hardware and Software support 
+by Ludwig Fäerber, Alexander Rehfeld and martinez
+
+Project homepage: http://brushlessgimbal.de/
+Discussions:
+http://fpv-community.de/showthread.php?20795-Brushless-Gimbal-Controller-SOFTWARE
+http://fpv-community.de/showthread.php?22617-Gimbal-Brushless-Controller-V3-0-50x50mm-by-Martinez
+http://fpv-community.de/showthread.php?19252-Brushless-Gimbal-Controller
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 any later version. see <http://www.gnu.org/licenses/>
 
-Thanks To : 
--Miniolli float
--brettbeauregard
--jrowberg
--rgsteele
+// I2Cdev library collection - MPU6050 I2C device class
+// Based on InvenSense MPU-6050 register map document rev. 2.0, 5/19/2011 (RM-MPU-6000A-00)
+// 10/3/2011 by Jeff Rowberg <jeff@rowberg.net>
+// Updates should (hopefully) always be available at https://github.com/jrowberg/i2cdevlib
 */
+
+
+// FOR CHANGES READ: ReleaseHistory.txt
 
 // Serial Programming for Settings!!!
 /* HOWTO:
 - edit definitions.h, if you must (MPU Address).
-- edit setDefaultParameters() in this file if you want to.
+- edit setDefaultParameters() if you want to.
 - Upload Firmware.
 - Open Arduino Terminal and enable NL in the lower right corner of the window.
 - Type in HE 
@@ -27,95 +36,8 @@ Thanks To :
 */
 
 
-/* Change History
-044 A: 
-- add choice between absolute and proportional RC positioning
-- add continious angle output for debugging/GUI purposes
-- add choice between raw ACC and DMP for Horizont stabilization
-  (DMP is experimental for now, PIDs have to be changed/lowered)
-  (Default is ACC)
-- Serial Protocol:
-WE    (Writes active config to eeprom)
-RE    (Restores values from eeprom to active config)
-TC    (transmits all config values in eeprom save order)
-SD    (Set Defaults)
-SP gyroPitchKp gyroPitchKi gyroPitchKd    (Set PID for Pitch)
-SR gyroRollKp gyroRollKi gyroRollKd    (Set PID for Roll)
-SA accelWeight    (Set Weight in accelWeight/1000)
-SF nPolesMotorPitch nPolesMotorRoll
-SE maxPWMmotorPitch maxPWMmotorRoll     (Used for Power limitiation on each motor 255=high, 1=low)
-SM dirMotorPitch dirMotorRoll motorNumberPitch motorNumberRoll
-GC    (Recalibrates the Gyro Offsets)
-TRC   (transmitts RC Config)
-SRC minRCPitch maxRCPitch minRCRoll maxRCRoll (angles -90..90)
-SCA rcAbsolute (1 = true, RC control is absolute; 0 = false, RC control is proportional)
-TCA   (Transmit RC control absolute or not)
-UAC useACC (1 = true, ACC; 0 = false, DMP)
-TAC   (Transmit ACC status)
-OAC accOutput (Toggle Angle output in ACC mode: 1 = true, 0 = false)
-ODM dmpOutput  (Toggle Angle output in DMP mode: 1 = true, 0 = false)
-HE    (This output)
-
-043 A: 
-- introduce RC Channel input :-)
-  Use A1 and A2 as PWM input pins for Pitch and Roll, DO NOT CONNECT +5V from REC-Receiver to Controller
-- add RC input config to serial protocol  
-  Type HE in terminal to see additional Protocol stuff (min max Angles per Axis)
-- start Code optimization: atan2 now runs ~2 times faster
-
-042 A: 
-- memory optimizations
-- reintroduce a way to motor power control (use fixed progmem arrays):
-PWM from 1 to 255
-
-041 A: MAJOR UPDATE!!!
-- removed "config.h", added serial protocol
--- configurable parameters now stored in eeprom
--- relevant parameters can be changes online now
-- Still: floating point math!!!
--CAVEAT only 100%Power for now, was not able to finish that this weekend.
-
-040 A: Test version, not published
-
-039 A: MAJOR REWORK!!!
-- Removed usage of DMP completely
-- Relay on raw Gyro and raw ACC only! 
-Gyro is used at ~1kHz to counter movements, ACC vs set point
-is mixed into gyro signal to ensure horizontal camera (IMU) position
-- global max PWM duty cycle and Power devider per motor can be configured in config.h 
-Hint: lower torque = lower power allows for higher P on Pitch for me.
-- code cleanup, removed obsolete stuff.
-- 32kHz PWM works now for motor movement updates for up to 8 kHz. 
-( No more beeping :-), i dont care for energy loss at the moment )
-
-038 A: Test version, not published
-
-037 A:
-- NEW: Motor Power Management. Two Options: 
-  -- Fixed max Torque/Power (caveat: 
-  -- Lower Torque/Power for slower Movements -> EXPERIMENTAL (removed in 039)
-- NEW: Use DMP output for I and D Part in control loop at 100Hz (or 200Hz), use raw Gyro at 500Hz for P-Part 
-  -- Caveat: setting the sample rate to 500Hz for gyro screws up the dmp algorithm for now. 
-     Some more research required ro configure the mpu correctly.
-     Therefore sample rate for gyro is set to 200Hz as well, resulting in loss of accuracy.
-  --> Remove choice of DMP/RAW_GYRO
-- Code cleanup
-- Removed the wiring.c modificitaions, does not work as intented anyway --> back to CC_FACTOR usage
-- Moved some definitions from config.h to definitions.h, dont change them for now.
-- Switched off Gyro and Accel write to DMP-FIFO, speeding up the code by ~200us per DMP read
-
-036 A:
-- Choose between DMP and Raw Gyro Stabilisation
-  (Raw Gyro is only a tech demo implementation for now: P controller only, no setpoint)
-- Faster Motor routine using uint8_t overflow for counter. Sinus Array length therefore is fixed now to 256.
-- Raw Gyro can be filtered with low pass (change alpha below)
-- YOU HAVE TO CHANGE wiring.c, see below !!!!
-- DOES IT WORK? Well....no fo now.
-*/
-
-
-#define VERSION_STATUS A // A = Alpha; B = Beta , N = Normal Release
-#define VERSION 44
+#define VERSION_STATUS B // A = Alpha; B = Beta , N = Normal Release
+#define VERSION 46
 
 
 /*************************/
@@ -138,10 +60,10 @@ Hint: lower torque = lower power allows for higher P on Pitch for me.
 struct config_t
 {
 uint8_t vers;
-int16_t gyroPitchKp; 
+int32_t gyroPitchKp; 
 int16_t gyroPitchKi;   
 int16_t gyroPitchKd;
-int16_t gyroRollKp;
+int32_t gyroRollKp;
 int16_t gyroRollKi;
 int16_t gyroRollKd;
 int16_t accelWeight;
@@ -157,38 +79,42 @@ int8_t minRCPitch;
 int8_t maxRCPitch;
 int8_t minRCRoll;
 int8_t maxRCRoll;
+int16_t rcGain;
 bool rcAbsolute;
 bool useACC;
 bool accOutput;
 bool dmpOutput;
 } config;
 
+void recalcSinusArrays();
 void setDefaultParameters()
 {
   config.vers = VERSION;
-  config.gyroPitchKp = 4800;
-  config.gyroPitchKi = 5;
-  config.gyroPitchKd = 20;
-  config.gyroRollKp = 8000;
-  config.gyroRollKi = 5;
-  config.gyroRollKd = 150;
-  config.accelWeight = 15;
+  config.gyroPitchKp = 10000;
+  config.gyroPitchKi = 10;
+  config.gyroPitchKd = 60;
+  config.gyroRollKp = 15000;
+  config.gyroRollKi = 10;
+  config.gyroRollKd = 500;
+  config.accelWeight = 75;
   config.nPolesMotorPitch = 14;
   config.nPolesMotorRoll = 14;
   config.dirMotorPitch = -1;
   config.dirMotorRoll = -1;
   config.motorNumberPitch = 0;
   config.motorNumberRoll = 1;
-  config.maxPWMmotorPitch = 120;
-  config.maxPWMmotorRoll = 180;
+  config.maxPWMmotorPitch = 100;
+  config.maxPWMmotorRoll = 150;
   config.minRCPitch = -45;
   config.maxRCPitch = 45;
   config.minRCRoll = -45;
   config.maxRCRoll = 45;
+  config.rcGain = 10;
   config.rcAbsolute = false;
   config.useACC = true;
   config.accOutput=false;
   config.dmpOutput=false;
+  recalcMotorStuff();
 }
 
 
@@ -327,31 +253,7 @@ float ultraFastAtan2(float y, float x)
    return(angle* (180.0f / PI));
 }
 
-float fastAtan2(float y, float x) // in deg
-{
-  #define fp_is_neg(val) ((((byte*)&val)[3] & 0x80) != 0)
-  float z = y / x;
-  int16_t zi = abs(int16_t(z * 100));
-  int8_t y_neg = fp_is_neg(y);
-  if ( zi < 100 ){
-    if (zi > 10)
-      z = z / (1.0f + 0.28f * z * z);
-    if (fp_is_neg(x)) {
-      if (y_neg) z -= PI;
-      else z += PI;
-    }
-  } else {
-    z = (PI / 2.0f) - z / (z * z + 0.28f);
-    if (y_neg) z -= PI;}
-  z *= (180.0f / PI);
-  return z;
-}
 
-int freeRam () {
-  extern int __heap_start, *__brkval; 
-  int v; 
-  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
-}
 
 int8_t sgn(int val) {
   if (val < 0) return -1;
@@ -365,6 +267,16 @@ void calcSinusArray(uint8_t maxPWM, uint8_t *array)
   {
     array[i] = maxPWM / 2.0 + sin(2.0 * i / N_SIN * 3.14159265) * maxPWM / 2.0;
   }  
+}
+
+void recalcMotorStuff()
+{
+  cli();
+  calcSinusArray(config.maxPWMmotorPitch,pwmSinMotorPitch);
+  calcSinusArray(config.maxPWMmotorRoll,pwmSinMotorRoll);
+  maxDegPerSecondPitch = MOTORUPDATE_FREQ * 1000.0 / N_SIN / (config.nPolesMotorPitch/2) * 360.0;
+  maxDegPerSecondRoll = MOTORUPDATE_FREQ * 1000.0 / N_SIN / (config.nPolesMotorRoll/2) * 360.0;
+  sei();
 }
 /*************************/
 /* MPU6050 Routines      */
@@ -502,9 +414,8 @@ void setup()
     EEPROM_writeAnything(0, config);
   }
 
-  // Init Sinus Arrays  
-  calcSinusArray(config.maxPWMmotorPitch,pwmSinMotorPitch);
-  calcSinusArray(config.maxPWMmotorRoll,pwmSinMotorRoll);
+  // Init Sinus Arrays and Motor Stuff 
+  recalcMotorStuff();
 
   // Init RC-Input
   pinMode(RC_PIN_ROLL, INPUT); digitalWrite(RC_PIN_ROLL, HIGH);
@@ -513,9 +424,6 @@ void setup()
   PCintPort::attachInterrupt(RC_PIN_PITCH, &intDecodePWMPitch, CHANGE);
   
     
-  // Initialize Motor Movement
-  maxDegPerSecondPitch = MOTORUPDATE_FREQ * 1000.0 / N_SIN / (config.nPolesMotorPitch/2) * 360.0;
-  maxDegPerSecondRoll = MOTORUPDATE_FREQ * 1000.0 / N_SIN / (config.nPolesMotorRoll/2) * 360.0;
   
   // Start I2C and Configure Frequency
   Wire.begin();
@@ -529,6 +437,7 @@ void setup()
   
   if(config.useACC==1)
   {
+    mpu.initialize();
     mpu.setClockSource(MPU6050_CLOCK_PLL_ZGYRO);          // Set Clock to ZGyro
     mpu.setFullScaleGyroRange(MPU6050_GYRO_FS);           // Set Gyro Sensitivity to config.h
     mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);       //+- 2G
@@ -538,8 +447,6 @@ void setup()
   }
   else // USE DMP
   {
-    mpu.initialize();
-
     mpu.initialize();
     mpu.dmpInitialize();
     mpu.setDMPEnabled(true);
@@ -559,7 +466,6 @@ void setup()
    // Init BL Controller
   initBlController();
   delay(10 * CC_FACTOR);
-  
   // Move Motors to ensure function
   for(int i=0; i<255; i++)
   {
@@ -572,7 +478,6 @@ void setup()
     fastMoveMotor(config.motorNumberPitch, -1,pwmSinMotorPitch); 
     delay(15 * CC_FACTOR);
   }
-  
   delay(40 * CC_FACTOR);
     
  // Initialize timer
@@ -609,7 +514,7 @@ void loop()
     // Update ACC data approximately at 50Hz to save calculation time.
     if(count == 20)
     {
-      sampleTimeACC = (micros()-timerACC)/1000.0/CC_FACTOR; // in Seconds * 1000.0 to account for factor 1000 in parameters
+      sampleTimeACC = (micros()-timerACC)/100.0/CC_FACTOR; // in Seconds * 10000.0 to account for factor 10000 scaling for acc weight
       timerACC=timer;
       //{Serial.print(sampleTimeACC,5);Serial.print(" ");Serial.println(sampleTimePID,5);}  
       mpu.getAcceleration(&x_val,&y_val,&z_val);
@@ -640,7 +545,7 @@ void loop()
     }
     if(mpuInterrupt)
     {
-      sampleTimeACC = (micros()-timerACC)/1000.0/CC_FACTOR; // in Seconds * 1000.0 to account for factor 1000 in parameters
+      sampleTimeACC = (micros()-timerACC)/100.0/CC_FACTOR; // in Seconds * 10000.0 to account for factor 10000 scaling for acc weight
       timerACC=timer;
       mpu.getFIFOBytes(fifoBuffer, 18); // I2C 800000L : 1300-1308 micros fo 42 bytes, ~540 micros for 16bytes
       mpu.dmpGetQuaternion(&q, fifoBuffer); // I2C 800000L : 64-68 micros
@@ -648,8 +553,6 @@ void loop()
       count++;
     }
   }
-  
-//      {Serial.print(pitchAngleACC);Serial.print(" ");Serial.println(rollAngleACC);}  
   
     
   if(config.rcAbsolute==1) // Absolute RC control
@@ -659,13 +562,13 @@ void loop()
     if(updateRCPitch==true)
     {
       pulseInPWMPitch = constrain(pulseInPWMPitch,MIN_RC,MAX_RC);
-      pitchSetpoint = 0.025 * (config.minRCPitch + (float)(pulseInPWMPitch - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCPitch - config.minRCPitch)) + 0.975 * pitchSetpoint;
+      pitchSetpoint = 0.05 * (config.minRCPitch + (float)(pulseInPWMPitch - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCPitch - config.minRCPitch)) + 0.95 * pitchSetpoint;
       updateRCPitch=false;
     }
     if(updateRCRoll==true)
     {
       pulseInPWMRoll = constrain(pulseInPWMRoll,MIN_RC,MAX_RC);
-      rollSetpoint = 0.025 * (config.minRCRoll + (float)(pulseInPWMRoll - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCRoll - config.minRCRoll)) + 0.975 * rollSetpoint;
+      rollSetpoint = 0.05 * (config.minRCRoll + (float)(pulseInPWMRoll - MIN_RC)/(float)(MAX_RC - MIN_RC) * (config.maxRCRoll - config.minRCRoll)) + 0.95 * rollSetpoint;
       updateRCRoll=false;
     }
   }
@@ -699,45 +602,35 @@ void loop()
       else rollRCSpeed = 0.0;
       updateRCRoll=false;
     }
+
+    if(fabs(rollRCSpeed)>0.0)
+    {
+      rollSetpoint = constrain(rollSetpoint + rollRCSpeed * config.rcGain * 0.02,config.minRCRoll,config.maxRCRoll);
+    }
+
+    if(fabs(pitchRCSpeed)>0.0)
+    {
+      pitchSetpoint = constrain(pitchSetpoint + pitchRCSpeed * config.rcGain * 0.02,config.minRCPitch,config.maxRCPitch);
+    }
   }
  
- //480-900
-  if((fabs(rollRCSpeed)>0.0)&&(rollAngleACC<config.maxRCRoll)&&(rollAngleACC>config.minRCRoll))
-  {
-    gyroRoll = gyroRoll + config.accelWeight * rollRCSpeed * RC_GAIN;
-    rollSetpoint = rollAngleACC;
-  }
-  else
-    gyroRoll = gyroRoll + config.accelWeight * (rollAngleACC - rollSetpoint) /sampleTimeACC;
-
-  if((fabs(pitchRCSpeed)>0.0)&&(pitchAngleACC<config.maxRCPitch)&&(pitchAngleACC>config.minRCPitch))
-  {
-    gyroPitch = gyroPitch + config.accelWeight * pitchRCSpeed * RC_GAIN;
-    pitchSetpoint = pitchAngleACC;
-  }
-  else
-    gyroPitch = gyroPitch + config.accelWeight * (pitchAngleACC - pitchSetpoint) /sampleTimeACC;
+  gyroRoll = gyroRoll + config.accelWeight * (rollAngleACC - rollSetpoint)* fabs(rollAngleACC - rollSetpoint) /sampleTimeACC;
+  gyroPitch = gyroPitch + config.accelWeight * (pitchAngleACC - pitchSetpoint)* fabs(pitchAngleACC - pitchSetpoint) /sampleTimeACC;
       
+  // Calculate PIDs
+  pitchPID = ComputePID(sampleTimePID,gyroPitch ,0.0, &pitchErrorSum, &pitchErrorOld,config.gyroPitchKp,config.gyroPitchKi,config.gyroPitchKd,maxDegPerSecondPitch);
+  rollPID = ComputePID(sampleTimePID,gyroRoll ,0.0, &rollErrorSum, &rollErrorOld,config.gyroRollKp,config.gyroRollKi,config.gyroRollKd,maxDegPerSecondRoll);
 
-//     pitchSetpoint=constrain(pitchSetpoint,config.minRCPitch,config.maxRCPitch);
-//      rollSetpoint=constrain(rollSetpoint,config.minRCRoll,config.maxRCRoll);
-
-//630-1130
-  pitchPID = ComputePID(sampleTimePID,gyroPitch,0.0, &pitchErrorSum, &pitchErrorOld,config.gyroPitchKp,config.gyroPitchKi,config.gyroPitchKd,maxDegPerSecondPitch);
-  rollPID = ComputePID(sampleTimePID,gyroRoll,0.0, &rollErrorSum, &rollErrorOld,config.gyroRollKp,config.gyroRollKi,config.gyroRollKd,maxDegPerSecondRoll);
-//1250-1700
-
+  // Calculate Motor Update Rate from PID output
   pitchDevider = constrain(maxDegPerSecondPitch / (pitchPID + 0.000001), -15000,15000)*2;
   pitchDirection = sgn(pitchDevider) * config.dirMotorPitch;
   rollDevider = constrain(maxDegPerSecondRoll / (rollPID + 0.000001), -15000,15000)*2;
   rollDirection = sgn(rollDevider) * config.dirMotorRoll;
-//1400-1850
 
-  
-
-//Serial.println( (micros()-timer)/CC_FACTOR);
+  // Evaluate Serial inputs 
   sCmd.readSerial(); 
-
+  
+  //Serial.println((micros()-timer)/CC_FACTOR);
 }
 
 
